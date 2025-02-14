@@ -1,0 +1,10 @@
+.env
+checkpoints*
+results*
+outputs*
+cuda*
+dataset*
+lts_venv*
+modulus*
+stokes_mgn/results
+stokes_mgn/__pycache__
