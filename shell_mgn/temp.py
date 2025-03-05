@@ -1,10 +1,73 @@
 from utils import save_test_idx, load_test_idx
-import torch
-idx = [
-    ('var-54', '90'),
-    ('var-78', '56')
-]
+from datapipe.shell_dataset import Hdf5Dataset
+import pyvista as pv
+import numpy as np
+from collections import defaultdict
 
-save_test_idx(idx)
+def edges_to_triangles(edge_list):
+    """
+    Infer triangles from an edge list assuming the mesh is made of connected trias.
 
-print(load_test_idx())
+    Parameters:
+    -----------
+    edge_list : list of tuple(int, int)
+        List of edges as pairs of node indices.
+
+    Returns:
+    --------
+    triangles : list of tuple(int, int, int)
+        List of triangles as node index triplets.
+    """
+    # Build neighbor map
+    neighbors = defaultdict(set)
+    for n1, n2 in edge_list:
+        neighbors[n1].add(n2)
+        neighbors[n2].add(n1)
+    
+    triangles = set()
+    for n1, adj_nodes in neighbors.items():
+        for n2 in adj_nodes:
+            for n3 in neighbors[n2]:
+                if n3 in neighbors[n1] and n1 < n2 < n3:  # Sort to avoid duplicates
+                    triangles.add((n1, n2, n3))
+    
+    return list(triangles)
+
+# idx = [
+#     ('var-54', '90'),
+#     ('var-78', '56')
+# ]
+
+# save_test_idx(idx)
+
+# print(load_test_idx())
+
+test_idx = load_test_idx("/home/sces213/Malaika/lts_modulus/shell_mgn/outputs/test_idx.pt")
+print(test_idx[0])
+
+test_hdf5 = Hdf5Dataset("/home/sces213/Malaika/lts_modulus/shell_mgn/dataset/dataset.hdf5", test_idx, len(test_idx))
+data_1 = test_hdf5[0]
+
+def create_vtk_from_graph(data_dict):
+    
+    points = data_dict["pos"]
+    edge_list = data_dict["connectivity"]
+    
+    triangles = edges_to_triangles(edge_list)
+    faces = convert_trias_to_faces(triangles)
+    polydata = pv.PolyData(points, faces)
+
+    polydata["disp_x"] ,polydata["disp_y"], polydata["disp_z"] = [data_dict["y"][:, i] for i in range(3)]
+    return polydata
+
+def convert_trias_to_faces(triangles):
+    # Flatten edge list to VTK's format for lines
+    faces = []
+    for tri in triangles:
+        faces.extend([3, *tri])
+    faces = np.array(faces)
+    return faces
+
+
+polydata = create_vtk_from_graph(data_1)
+polydata.save("temp1.vtp")

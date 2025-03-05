@@ -28,7 +28,7 @@ except:
         + "pip install pyvista"
     )
 import h5py
-# import json
+from collections import defaultdict
 
 def get_datapoint_idx(data_path):
     all_idx = []
@@ -73,6 +73,56 @@ def relative_lp_error(pred, y, p=2):
 
     error = torch.mean(torch.norm(pred - y, p=p) / torch.norm(y, p=p)).cpu().numpy()
     return error * 100
+
+## functions for pi-fine tuning
+def edges_to_triangles(edge_list):
+    """
+    Infer triangles from an edge list assuming the mesh is made of connected trias.
+
+    Parameters:
+    -----------
+    edge_list : list of tuple(int, int)
+        List of edges as pairs of node indices.
+
+    Returns:
+    --------
+    triangles : list of tuple(int, int, int)
+        List of triangles as node index triplets.
+    """
+    # Build neighbor map
+    neighbors = defaultdict(set)
+    for n1, n2 in edge_list:
+        neighbors[n1].add(n2)
+        neighbors[n2].add(n1)
+    
+    triangles = set()
+    for n1, adj_nodes in neighbors.items():
+        for n2 in adj_nodes:
+            for n3 in neighbors[n2]:
+                if n3 in neighbors[n1] and n1 < n2 < n3:  # Sort to avoid duplicates
+                    triangles.add((n1, n2, n3))
+    
+    return list(triangles)
+
+def create_vtk_from_graph(data_dict):
+    
+    points = data_dict["pos"]
+    edge_list = data_dict["connectivity"]
+    
+    triangles = edges_to_triangles(edge_list)
+    faces = convert_egdes_to_trias(triangles)
+    polydata = pv.PolyData(points, faces)
+
+    polydata["disp_x"] ,polydata["disp_y"], polydata["disp_z"] = [data_dict["y"][:, i] for i in range(3)]
+    return polydata
+
+def convert_egdes_to_trias(triangles):
+    # Flatten edge list to VTK's format for lines
+    faces = []
+    for tri in triangles:
+        faces.extend([3, *tri])
+    faces = np.array(faces)
+    return faces
 
 
 
