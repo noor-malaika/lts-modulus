@@ -124,7 +124,10 @@ def convert_egdes_to_trias(triangles):
     faces = np.array(faces)
     return faces
 
-
+def log_cosh_error(pred, true):
+    # Calculate log-cosh loss: log(cosh(pred - true))
+    error = torch.mean(torch.log(torch.cosh(pred - true)))
+    return error * 100
 
 ####### need to change
 # Inflow boundary condition

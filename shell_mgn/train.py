@@ -42,7 +42,7 @@ from modulus.launch.logging.wandb import initialize_wandb
 from modulus.launch.utils import load_checkpoint, save_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 
-from utils import relative_lp_error, get_datapoint_idx, get_data_splits, save_test_idx
+from utils import get_datapoint_idx, get_data_splits, save_test_idx, log_cosh_error
 from custom_loss import LogCoshLoss
 
 
@@ -196,7 +196,7 @@ class MGNTrainer:
             for index, key in enumerate(error_keys):
                 pred_val = pred[:, index : index + 1]
                 target_val = graph.ndata["y"][:, index : index + 1]
-                errors[key] += relative_lp_error(pred_val, target_val)
+                errors[key] += log_cosh_error(pred_val, target_val)
 
         for key in error_keys:
             errors[key] = errors[key] / len(self.validation_dataloader)
