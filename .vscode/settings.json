@@ -1,0 +1,5 @@
+{
+    "debugpy.debugJustMyCode": false,
+    "search.useParentIgnoreFiles": false,
+    "search.useGlobalIgnoreFiles": true
+}

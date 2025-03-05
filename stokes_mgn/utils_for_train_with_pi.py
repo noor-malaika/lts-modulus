@@ -83,9 +83,10 @@ def get_dataset(path, return_graph=False):
     ref_v = np.array(pv_mesh.point_data["v"]).reshape(-1, 1)
     ref_p = np.array(pv_mesh.point_data["p"]).reshape(-1, 1)
 
-    gnn_u = np.array(pv_mesh.point_data["pred_u"]).reshape(-1, 1)
-    gnn_v = np.array(pv_mesh.point_data["pred_v"]).reshape(-1, 1)
-    gnn_p = np.array(pv_mesh.point_data["pred_p"]).reshape(-1, 1)
+    ###
+    # gnn_u = np.array(pv_mesh.point_data["pred_u"]).reshape(-1, 1)
+    # gnn_v = np.array(pv_mesh.point_data["pred_v"]).reshape(-1, 1)
+    # gnn_p = np.array(pv_mesh.point_data["pred_p"]).reshape(-1, 1)
 
     nu = 0.01
 
@@ -134,7 +135,7 @@ def get_dataset(path, return_graph=False):
                 graph.ndata[array_name] = torch.tensor(array_data, dtype=torch.float32)
 
         # compute freq features
-        B = 10 * torch.randn((2, 64)) # 128 additional input dim that goes to MGN
+        B = 10 * torch.randn((2, 64))
         x_proj = torch.matmul(graph.ndata["pos"], B)
         x_proj = torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
         graph.ndata["freq"] = x_proj
@@ -155,9 +156,9 @@ def get_dataset(path, return_graph=False):
             ref_u,
             ref_v,
             ref_p,
-            gnn_u,
-            gnn_v,
-            gnn_p,
+            # gnn_u,
+            # gnn_v,
+            # gnn_p,
             coords,
             inflow_coords,
             outflow_coords,
@@ -171,9 +172,9 @@ def get_dataset(path, return_graph=False):
             ref_u,
             ref_v,
             ref_p,
-            gnn_u,
-            gnn_v,
-            gnn_p,
+            # gnn_u,
+            # gnn_v,
+            # gnn_p,
             coords,
             inflow_coords,
             outflow_coords,

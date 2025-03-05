@@ -6,5 +6,8 @@ cuda*
 dataset*
 lts_venv*
 modulus*
+shell_mgn/results
 stokes_mgn/results
 stokes_mgn/__pycache__
+shell_mgn/*dataset*
+nohup.out

@@ -27,7 +27,32 @@ except:
         "Stokes Dataset requires the pyvista library. Install with "
         + "pip install pyvista"
     )
+import h5py
+# import json
 
+def get_datapoint_idx(data_path):
+    all_idx = []
+    with h5py.File(data_path, 'r') as data_file:
+        for variant in data_file.keys():
+            for subcase in data_file[variant]:
+                all_idx.append((variant, subcase))
+    return all_idx
+
+def get_data_splits(idx):
+    np.random.shuffle(idx)
+    train_idx = idx[:int(0.7*(len(idx)))]
+    val_idx = idx[int(0.7*(len(idx))):int(0.85*len(idx))]
+    test_idx = idx[int(0.85*len(idx)):]
+    return train_idx, val_idx, test_idx
+
+def save_test_idx(idx):
+    # with open("test_idx_json.json", 'w') as file:
+    #     json.dump(idx, file)
+    torch.save(idx, "test_idx.pt")
+
+def load_test_idx(file="test_idx.pt"):
+    idx = torch.load(file)
+    return idx
 
 def relative_lp_error(pred, y, p=2):
     """
@@ -50,6 +75,8 @@ def relative_lp_error(pred, y, p=2):
     return error * 100
 
 
+
+####### need to change
 # Inflow boundary condition
 def parabolic_inflow(y, U_max):
     """parabolic inflow"""

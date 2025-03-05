@@ -31,7 +31,8 @@ try:
 except:
     pass
 
-from modulus.datapipes.gnn.stokes_dataset import StokesDataset
+# from modulus.datapipes.gnn.stokes_dataset import StokesDataset
+from datapipe.shell_dataset import ShellDataset, Hdf5Dataset
 from modulus.distributed.manager import DistributedManager
 from modulus.launch.logging import (
     PythonLogger,
@@ -41,7 +42,7 @@ from modulus.launch.logging.wandb import initialize_wandb
 from modulus.launch.utils import load_checkpoint, save_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 
-from utils import relative_lp_error
+from utils import relative_lp_error, get_datapoint_idx, get_data_splits, save_test_idx
 
 
 class MGNTrainer:
@@ -50,18 +51,27 @@ class MGNTrainer:
         self.rank_zero_logger = rank_zero_logger
         self.amp = cfg.amp
 
+        # splitting dataset
+        all_idx = get_datapoint_idx(cfg.data_path)
+        train_idx, val_idx, test_idx = get_data_splits(all_idx)
+
+        # saving test_idx for future testing
+        save_test_idx(test_idx)
+
         # instantiate dataset
-        dataset = StokesDataset(
-            name="stokes_train",
-            data_dir=to_absolute_path(cfg.data_dir),
+        train_hdf5 = Hdf5Dataset(cfg.data_path, train_idx, len(train_idx))
+        dataset = ShellDataset(
+            name="shell_train",
+            dataset_split=train_hdf5,
             split="train",
             num_samples=cfg.num_training_samples,
         )
 
         # instantiate validation dataset
-        validation_dataset = StokesDataset(
-            name="stokes_validation",
-            data_dir=to_absolute_path(cfg.data_dir),
+        val_hdf5 = Hdf5Dataset(cfg.data_path, val_idx, len(val_idx))
+        validation_dataset = ShellDataset(
+            name="shell_validation",
+            dataset_split=val_hdf5,
             split="validation",
             num_samples=cfg.num_validation_samples,
         )
@@ -85,6 +95,7 @@ class MGNTrainer:
             pin_memory=True,
             use_ddp=False,
         )
+
 
         # instantiate the model
         self.model = MeshGraphNet(
@@ -148,7 +159,7 @@ class MGNTrainer:
         self.scheduler.step()
         return loss
 
-    def forward(self, graph):
+    def forward(self, graph):   
         # forward pass
         with autocast(enabled=self.amp):
             pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
@@ -173,7 +184,7 @@ class MGNTrainer:
 
     @torch.no_grad()
     def validation(self):
-        error_keys = ["u", "v", "p"]
+        error_keys = ["disp_x", "disp_y", "disp_z"]
         errors = {key: 0 for key in error_keys}
 
         for graph in self.validation_dataloader:
@@ -191,9 +202,9 @@ class MGNTrainer:
 
         wandb.log(
             {
-                "val_u_error (%)": errors["u"],
-                "val_v_error (%)": errors["v"],
-                "val_p_error (%)": errors["p"],
+                "val_disp_x_error (%)": errors["disp_x"],
+                "val_disp_y_error (%)": errors["disp_y"],
+                "val_disp_z_error (%)": errors["disp_z"],
             }
         )
 
@@ -207,10 +218,10 @@ def main(cfg: DictConfig) -> None:
 
     # initialize loggers
     initialize_wandb(
-        project="modulus-stokes-flow",
+        project="modulus-shell-run",
         entity="malaikanoor7864-mnsuam",
-        name="Stokes-Training",
-        group="Stokes-DDP-Group",
+        name="Shell-Training",
+        group="Shell-Sequential-Group",
         mode=cfg.wandb_mode,
     )
 
@@ -224,9 +235,18 @@ def main(cfg: DictConfig) -> None:
 
     for epoch in range(trainer.epoch_init, cfg.epochs):
         loss_agg = 0
-        for graph in trainer.dataloader:
+        rank_zero_logger.info(
+            f"epoch: {epoch}"
+        )
+
+        for i,graph in enumerate(trainer.dataloader):
             loss = trainer.train(graph)
-            loss_agg += loss.detach().cpu().numpy()
+            loss = loss.detach().cpu().numpy()
+            loss_agg += loss
+            wandb.log({"graph_loss_per_epoch":loss})
+            rank_zero_logger.info(
+            f"\tgraph_{i}_loss_per_epoch: {loss:10.3e}, lr: {trainer.get_lr()}, time per graph: {(time.time() - start):10.3e}"
+            )
         loss_agg /= len(trainer.dataloader)
         rank_zero_logger.info(
             f"epoch: {epoch}, loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}, time per epoch: {(time.time() - start):10.3e}"

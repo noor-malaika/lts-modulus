@@ -18,16 +18,16 @@ hydra:
   job:
     chdir: True
   run:
-    dir: ./outputs/
+    dir: /home/sces213/Malaika/lts_modulus/shell_mgn/outputs/
   
-ckpt_path: "./checkpoints"
-ckpt_name: "./stokes.pt"
-data_dir: "./dataset"
-results_dir: "./results"
+ckpt_path: "/home/sces213/Malaika/lts_modulus/shell_mgn/checkpoints"
+ckpt_name: "/home/sces213/Malaika/lts_modulus/shell_mgn/shell.pt"
+data_path: "/home/sces213/Malaika/lts_modulus/shell_mgn/dataset/dataset.hdf5" # -> path to hdf5
+results_dir: "/home/sces213/Malaika/lts_modulus/shell_mgn/results"
 
-input_dim_nodes: 7 # ndata -> pos(2d) ,markers 5 ; not sure
-input_dim_edges: 3 # edata -> disp_vector(2d) , disp_norm
-output_dim: 3 # u,v (velocities in x and y directions), p pressure
+input_dim_nodes: 11 # 3d pos, 1d ntype, 1d thickness, 3d spc 3d force | ndata -> pos(2d) ,markers 5 ; not sure
+input_dim_edges: 5 # 3d disp, 1d norm, 1d etypes | edata -> disp_vector(2d) , disp_norm
+output_dim: 3 # disp_x,y,z | u,v (velocities in x and y directions), p pressure
 hidden_dim_node_encoder: 256
 hidden_dim_edge_encoder: 256
 hidden_dim_node_decoder: 256
@@ -45,7 +45,7 @@ lr_decay_rate: 0.99985
 
 amp: False
 jit: False
-wandb_mode: "disabled"
+wandb_mode: "online"
 
 # Physics-informed constants
 graph_path: "graph_9.vtp"
