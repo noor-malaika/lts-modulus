@@ -43,6 +43,7 @@ from modulus.launch.utils import load_checkpoint, save_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 
 from utils import relative_lp_error, get_datapoint_idx, get_data_splits, save_test_idx
+from custom_loss import LogCoshLoss
 
 
 class MGNTrainer:
@@ -126,7 +127,8 @@ class MGNTrainer:
         self.model.train()
 
         # instantiate loss, optimizer, and scheduler
-        self.criterion = torch.nn.MSELoss()
+        # self.criterion = torch.nn.MSELoss()
+        self.criterion = LogCoshLoss()
         try:
             self.optimizer = apex.optimizers.FusedAdam(
                 self.model.parameters(), lr=cfg.lr
@@ -220,7 +222,7 @@ def main(cfg: DictConfig) -> None:
     initialize_wandb(
         project="modulus-shell-run",
         entity="malaikanoor7864-mnsuam",
-        name="Shell-Training",
+        name="Shell-Training-Log(Cosh)-Loss",
         group="Shell-Sequential-Group",
         mode=cfg.wandb_mode,
     )
@@ -228,7 +230,7 @@ def main(cfg: DictConfig) -> None:
     logger = PythonLogger("main")  # General python logger
     rank_zero_logger = RankZeroLoggingWrapper(logger, dist)  # Rank 0 logger
     rank_zero_logger.file_logging()
-
+    torch.cuda.empty_cache()
     trainer = MGNTrainer(cfg, dist, rank_zero_logger)
     start = time.time()
     rank_zero_logger.info("Training started...")
