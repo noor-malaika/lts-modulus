@@ -26,7 +26,7 @@ from modulus.launch.utils import load_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 from omegaconf import DictConfig
 
-from utils import relative_lp_error, load_test_idx, create_vtk_from_graph
+from utils import mae, load_test_idx, create_vtk_from_graph
 
 try:
     from dgl import DGLGraph
@@ -93,7 +93,7 @@ class MGNRollout:
             to_absolute_path(cfg.ckpt_path),
             models=self.model,
             device=self.device,
-            epoch=250 #### change to load ckpt of choice, or None for loading latest saved
+            epoch=214 #### change to load ckpt of choice, or None for loading latest saved
         )
 
     def predict(self):
@@ -122,22 +122,22 @@ class MGNRollout:
             ### read graph_data/ create polydata
             data_i = self.dataset.dataset_split[i]
             polydata = create_vtk_from_graph(data_i)
+            with torch.no_grad():
+                for key_index, key in enumerate(keys):
+                    pred_val = pred[:, key_index : key_index + 1]
+                    target_val = graph.ndata["y"][:, key_index : key_index + 1]
 
-            for key_index, key in enumerate(keys):
-                pred_val = pred[:, key_index : key_index + 1]
-                target_val = graph.ndata["y"][:, key_index : key_index + 1]
+                    pred_val = self.dataset.denormalize(
+                        pred_val, stats[f"{key}_mean"], stats[f"{key}_std"]
+                    )
+                    target_val = self.dataset.denormalize(
+                        target_val, stats[f"{key}_mean"], stats[f"{key}_std"]
+                    )
 
-                pred_val = self.dataset.denormalize(
-                    pred_val, stats[f"{key}_mean"], stats[f"{key}_std"]
-                )
-                target_val = self.dataset.denormalize(
-                    target_val, stats[f"{key}_mean"], stats[f"{key}_std"]
-                )
+                    error = mae(pred_val, target_val)
+                    self.logger.info(f"Sample {i} - mae error of {key}: {error:.3f}")
 
-                error = relative_lp_error(pred_val, target_val)
-                self.logger.info(f"Sample {i} - l2 error of {key}(%): {error:.3f}")
-
-                polydata[f"pred_{key}"] = pred_val.detach().cpu().numpy()
+                    polydata[f"pred_{key}"] = pred_val.detach().cpu().numpy()
 
             self.logger.info("-" * 50)
             os.makedirs(to_absolute_path(self.results_dir), exist_ok=True)

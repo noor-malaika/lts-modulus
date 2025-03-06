@@ -31,7 +31,6 @@ try:
 except:
     pass
 
-# from modulus.datapipes.gnn.stokes_dataset import StokesDataset
 from datapipe.shell_dataset import ShellDataset, Hdf5Dataset
 from modulus.distributed.manager import DistributedManager
 from modulus.launch.logging import (
@@ -42,7 +41,7 @@ from modulus.launch.logging.wandb import initialize_wandb
 from modulus.launch.utils import load_checkpoint, save_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 
-from utils import get_datapoint_idx, get_data_splits, save_test_idx, log_cosh_error
+from utils import get_datapoint_idx, get_data_splits, save_test_idx, mae
 from custom_loss import LogCoshLoss
 
 
@@ -196,17 +195,17 @@ class MGNTrainer:
             for index, key in enumerate(error_keys):
                 pred_val = pred[:, index : index + 1]
                 target_val = graph.ndata["y"][:, index : index + 1]
-                errors[key] += log_cosh_error(pred_val, target_val)
+                errors[key] += mae(pred_val, target_val)
 
         for key in error_keys:
             errors[key] = errors[key] / len(self.validation_dataloader)
-            self.rank_zero_logger.info(f"validation error_{key} (%): {errors[key]}")
+            self.rank_zero_logger.info(f"validation error_{key} mae(mm): {errors[key]}")
 
         wandb.log(
             {
-                "val_disp_x_error (%)": errors["disp_x"],
-                "val_disp_y_error (%)": errors["disp_y"],
-                "val_disp_z_error (%)": errors["disp_z"],
+                "val_disp_x_error mae(mm)": errors["disp_x"],
+                "val_disp_y_error mae(mm)": errors["disp_y"],
+                "val_disp_z_error mae(mm)": errors["disp_z"],
             }
         )
 
@@ -247,11 +246,11 @@ def main(cfg: DictConfig) -> None:
             loss_agg += loss
             wandb.log({"graph_loss_per_epoch":loss})
             rank_zero_logger.info(
-            f"\tgraph_{i}_loss_per_epoch: {loss:10.3e}, lr: {trainer.get_lr()}, time per graph: {(time.time() - start):10.3e}"
+            f"\tgraph_{i}_loss_per_epoch: {loss:10.3e}, lr: {trainer.get_lr()}"
             )
         loss_agg /= len(trainer.dataloader)
         rank_zero_logger.info(
-            f"epoch: {epoch}, loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}, time per epoch: {(time.time() - start):10.3e}"
+            f"epoch: {epoch}, loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}"
         )
         wandb.log({"loss": loss_agg})
 
