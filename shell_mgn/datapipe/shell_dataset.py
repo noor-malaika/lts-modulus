@@ -61,7 +61,7 @@ class ShellDataset(DGLDataset):
         num_samples=10,
         invar_keys=["pos", "ntypes", "thickness", "spc", "load"],
         outvar_keys=["disp_x", "disp_y", "disp_z"],
-        normalize_keys=["disp_x", "disp_y", "disp_z", "load", "thickness"],
+        normalize_keys=["load", "thickness"],
         force_reload=False,
         name="dataset",
         verbose=False

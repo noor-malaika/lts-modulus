@@ -26,7 +26,7 @@ from modulus.launch.utils import load_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 from omegaconf import DictConfig
 
-from utils import mae, load_test_idx, create_vtk_from_graph
+from utils import relative_lp_error, load_test_idx, create_vtk_from_graph
 
 try:
     from dgl import DGLGraph
@@ -93,7 +93,7 @@ class MGNRollout:
             to_absolute_path(cfg.ckpt_path),
             models=self.model,
             device=self.device,
-            epoch=214 #### change to load ckpt of choice, or None for loading latest saved
+            epoch=228 #### change to load ckpt of choice, or None for loading latest saved
         )
 
     def predict(self):
@@ -134,8 +134,8 @@ class MGNRollout:
                         target_val, stats[f"{key}_mean"], stats[f"{key}_std"]
                     )
 
-                    error = mae(pred_val, target_val)
-                    self.logger.info(f"Sample {i} - mae error of {key}: {error:.3f}")
+                    error = relative_lp_error(pred_val, target_val)
+                    self.logger.info(f"Sample {i} - relative_lp_error error of {key} (%): {error:.3f}")
 
                     polydata[f"pred_{key}"] = pred_val.detach().cpu().numpy()
 

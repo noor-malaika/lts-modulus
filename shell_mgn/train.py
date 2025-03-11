@@ -41,8 +41,8 @@ from modulus.launch.logging.wandb import initialize_wandb
 from modulus.launch.utils import load_checkpoint, save_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 
-from utils import get_datapoint_idx, get_data_splits, save_test_idx, mae
-from custom_loss import LogCoshLoss
+from utils import get_datapoint_idx, get_data_splits, save_test_idx, relative_lp_error
+from custom_loss import MultiComponentLoss
 
 
 class MGNTrainer:
@@ -69,7 +69,7 @@ class MGNTrainer:
 
         # instantiate validation dataset
         val_hdf5 = Hdf5Dataset(cfg.data_path, val_idx, len(val_idx))
-        validation_dataset = ShellDataset(
+        self.validation_dataset = ShellDataset(
             name="shell_validation",
             dataset_split=val_hdf5,
             split="validation",
@@ -88,7 +88,7 @@ class MGNTrainer:
 
         # instantiate validation dataloader
         self.validation_dataloader = GraphDataLoader(
-            validation_dataset,
+            self.validation_dataset,
             batch_size=cfg.batch_size,
             shuffle=False,
             drop_last=True,
@@ -126,14 +126,16 @@ class MGNTrainer:
         self.model.train()
 
         # instantiate loss, optimizer, and scheduler
-        # self.criterion = torch.nn.MSELoss()
-        self.criterion = LogCoshLoss()
+        self.criterion = torch.nn.MSELoss()
+        # self.criterion = LogCoshLoss()
+        # self.criterion = MultiComponentLoss()
         try:
             self.optimizer = apex.optimizers.FusedAdam(
                 self.model.parameters(), lr=cfg.lr
             )
             rank_zero_logger.info("Using FusedAdam optimizer")
         except: ##### continue from here
+            # self.optimizer = torch.optim.Adam(list(self.criterion.parameters()) + list(self.model.parameters()), lr=cfg.lr)
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.lr)
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer, lr_lambda=lambda epoch: cfg.lr_decay_rate**epoch
@@ -188,24 +190,31 @@ class MGNTrainer:
         error_keys = ["disp_x", "disp_y", "disp_z"]
         errors = {key: 0 for key in error_keys}
 
-        for graph in self.validation_dataloader:
+        for i,graph in enumerate(self.validation_dataloader):
             graph = graph.to(self.dist.device)
             pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
 
             for index, key in enumerate(error_keys):
                 pred_val = pred[:, index : index + 1]
                 target_val = graph.ndata["y"][:, index : index + 1]
-                errors[key] += mae(pred_val, target_val)
+                ## for prev runs validations were not denormalized
+                # pred_val = self.validation_dataset.denormalize(
+                #     pred_val, self.validation_dataset.node_stats[f'{key}_mean'], self.validation_dataset.node_stats[f'{key}_std']
+                # )
+                # target_val = self.validation_dataset.denormalize(
+                #     target_val, self.validation_dataset.node_stats[f'{key}_mean'], self.validation_dataset.node_stats[f'{key}_std']
+                # )
+                errors[key] += relative_lp_error(pred_val, target_val)
 
         for key in error_keys:
             errors[key] = errors[key] / len(self.validation_dataloader)
-            self.rank_zero_logger.info(f"validation error_{key} mae(mm): {errors[key]}")
+            self.rank_zero_logger.info(f"validation error_{key} (%): {errors[key]}")
 
         wandb.log(
             {
-                "val_disp_x_error mae(mm)": errors["disp_x"],
-                "val_disp_y_error mae(mm)": errors["disp_y"],
-                "val_disp_z_error mae(mm)": errors["disp_z"],
+                "val_disp_x_error (%)": errors["disp_x"],
+                "val_disp_y_error (%)": errors["disp_y"],
+                "val_disp_z_error (%)": errors["disp_z"],
             }
         )
 
