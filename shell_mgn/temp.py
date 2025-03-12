@@ -73,28 +73,82 @@
 # polydata.save("temp1.vtp")
 
 
+# import torch
+# import numpy as np
+# import matplotlib.pyplot as plt
+
+# # Small range of values for pred
+# pred = torch.tensor(np.linspace(-1, 1, 100), dtype=torch.float32)
+# actual = torch.zeros_like(pred)
+
+# # Compute log(cosh(pred - actual))
+# loss = torch.log(torch.cosh(pred - actual))
+
+# # Plot the loss
+# plt.figure(figsize=(8, 6))
+# plt.plot(pred.numpy(), loss.numpy(), label='log(cosh(pred - actual))')
+# plt.xlabel('Prediction (pred)')
+# plt.ylabel('Loss')
+# plt.title('log(cosh) Loss for Small Predictions vs Actuals')
+# plt.legend()
+# plt.grid(True)
+
+# # Save the figure to a file
+# plt.savefig('log_cosh_loss_plot.png')  # Change the filename as needed
+
+# # Optionally, show the plot
+# # plt.show()
+
 import torch
-import numpy as np
-import matplotlib.pyplot as plt
+import torch.nn as nn
 
-# Small range of values for pred
-pred = torch.tensor(np.linspace(-1, 1, 100), dtype=torch.float32)
-actual = torch.zeros_like(pred)
+class LogCoshLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
 
-# Compute log(cosh(pred - actual))
-loss = torch.log(torch.cosh(pred - actual))
+    def forward(self, preds, trues):
+        return torch.mean(torch.log(torch.cosh(preds - trues)))
 
-# Plot the loss
-plt.figure(figsize=(8, 6))
-plt.plot(pred.numpy(), loss.numpy(), label='log(cosh(pred - actual))')
-plt.xlabel('Prediction (pred)')
-plt.ylabel('Loss')
-plt.title('log(cosh) Loss for Small Predictions vs Actuals')
-plt.legend()
-plt.grid(True)
+class MeanSquaredError(nn.Module):
+    def __init__(self):
+        super().__init__()
 
-# Save the figure to a file
-plt.savefig('log_cosh_loss_plot.png')  # Change the filename as needed
+    def forward(self, preds, trues):
+        return torch.mean((preds - trues) ** 2)
 
-# Optionally, show the plot
-# plt.show()
+class MeanRelativeAbsoluteError(nn.Module):
+    def __init__(self, eps=1e-8):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, preds, trues):
+        relative_errors = torch.abs(preds - trues) / (torch.abs(trues) + self.eps)
+        return 100 * torch.mean(relative_errors)  # Convert to percentage
+
+# Normalization
+def max_abs_normalize(data):
+    max_abs = torch.max(torch.abs(data))
+    return data / max_abs
+
+# Example usage
+y_true = torch.tensor([[-6.9, -1.0, 0.5],
+                       [-0.5, 2.0, 0.0]])
+y_pred = torch.tensor([[-7.0, 1.0, 0.6],
+                       [0.5, 3.4, 0.0]])
+'''
+mrae has better percentage than mse
+'''
+# Normalize displacements
+y_true_normalized = max_abs_normalize(y_true)
+y_pred_normalized = max_abs_normalize(y_pred)
+
+# Loss and metric
+loss_fn = LogCoshLoss()  # or MeanSquaredError()
+metric_fn = MeanRelativeAbsoluteError()
+
+loss = loss_fn(y_pred_normalized, y_true_normalized)
+metric = metric_fn(y_pred_normalized, y_true_normalized)
+print(f'true {y_true_normalized}\npred {y_pred_normalized}')
+print(f"Loss: {loss.item()}, mrae: {metric.item()}%")
+from utils import relative_lp_error
+print(relative_lp_error(y_pred_normalized, y_true_normalized))

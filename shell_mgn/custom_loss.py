@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-class LogCoshLoss(torch.nn.Module):
+class LogCoshLoss_old(torch.nn.Module): ## small weights scaled, high become negligible
     def __init__(self):
         super(LogCoshLoss, self).__init__()
 
@@ -13,7 +13,25 @@ class LogCoshLoss(torch.nn.Module):
 
         return loss
 
+class LogCoshLoss(torch.nn.Module):
+    def __init__(self):
+        super(LogCoshLoss, self).__init__()
 
+    def forward(self, pred, true):
+        loss = torch.mean(torch.log(torch.cosh(pred - true)))
+        return loss
+
+class WeightedLogCoshLoss(nn.Module): ## weights r explicitly provided
+    def __init__(self, weights):
+        super().__init__()
+        self.weights = weights
+
+    def forward(self, preds, trues):
+        loss = 0
+        for i, weight in enumerate(self.weights):
+            diff = preds[:, i] - trues[:, i]
+            loss += weight * torch.mean(torch.log(torch.cosh(diff)))
+        return loss
 
 class MultiComponentLoss(nn.Module):
     def __init__(self, num_components=3):

@@ -42,7 +42,7 @@ from modulus.launch.utils import load_checkpoint, save_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 
 from utils import get_datapoint_idx, get_data_splits, save_test_idx, relative_lp_error
-from custom_loss import MultiComponentLoss
+from custom_loss import LogCoshLoss
 
 
 class MGNTrainer:
@@ -126,9 +126,10 @@ class MGNTrainer:
         self.model.train()
 
         # instantiate loss, optimizer, and scheduler
-        self.criterion = torch.nn.MSELoss()
+        # self.criterion = torch.nn.MSELoss()
         # self.criterion = LogCoshLoss()
         # self.criterion = MultiComponentLoss()
+        self.criterion = LogCoshLoss()
         try:
             self.optimizer = apex.optimizers.FusedAdam(
                 self.model.parameters(), lr=cfg.lr

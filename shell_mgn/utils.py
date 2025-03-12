@@ -124,10 +124,21 @@ def convert_egdes_to_trias(triangles):
     faces = np.array(faces)
     return faces
 
-# def relative_mae(pred, true, eps=1e-8):
-#     return ((torch.sum(torch.abs(pred - true)) / torch.sum(torch.abs(true) + eps)).item()) * 100
+def relative_mae(pred, true, eps=1e-8):
+    return ((torch.sum(torch.abs(pred - true)) / torch.sum(torch.abs(true) + eps)).item()) * 100
+
+def mrae(preds, trues, eps=1e-8):
+        relative_errors = torch.abs(preds - trues) / (torch.abs(trues) + eps)
+        return 100 * torch.mean(relative_errors)
+
+def max_abs_normalize(data):
+    max_abs = torch.max(torch.abs(data))
+    return data / max_abs
 
 
+def log_cosh(pred, true):
+    log_cosh_loss = torch.mean(torch.log(torch.cosh(pred - true)))
+    return log_cosh_loss * 100
 
 ####### need to change
 # Inflow boundary condition
