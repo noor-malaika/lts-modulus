@@ -17,34 +17,32 @@
 import os
 
 import hydra
-import numpy as np
 import torch
 from hydra.utils import to_absolute_path
-from modulus.datapipes.gnn.stokes_dataset import StokesDataset
 from modulus.launch.logging import PythonLogger
 from modulus.launch.utils import load_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 from omegaconf import DictConfig
 
-from utils import log_cosh, load_test_idx, create_vtk_from_graph
+from utils import relative_lp_error, load_test_idx, create_vtk_from_graph
 
 try:
-    from dgl import DGLGraph
     from dgl.dataloading import GraphDataLoader
-except:
+except Exception:
     raise ImportError(
         "Stokes  example requires the DGL library. Install the "
         + "desired CUDA version at: \n https://www.dgl.ai/pages/start.html"
     )
 
 try:
-    import pyvista as pv
-except:
+    pass
+except Exception:
     raise ImportError(
         "Stokes  Dataset requires the pyvista library. Install with "
         + "pip install pyvista"
     )
 from datapipe.shell_dataset import Hdf5Dataset, ShellDataset
+
 
 class MGNRollout:
     def __init__(self, cfg: DictConfig, logger):
@@ -62,7 +60,7 @@ class MGNRollout:
             name="stokes_test",
             dataset_split=test_hdf5,
             split="test",
-            num_samples=cfg.num_test_samples
+            num_samples=cfg.num_test_samples,
         )
 
         # instantiate dataloader
@@ -93,7 +91,7 @@ class MGNRollout:
             to_absolute_path(cfg.ckpt_path),
             models=self.model,
             device=self.device,
-            epoch=28 #### change to load ckpt of choice, or None for loading latest saved
+            epoch=48,  #### change to load ckpt of choice, or None for loading latest saved
         )
 
     def predict(self):
@@ -134,8 +132,10 @@ class MGNRollout:
                     #     target_val, stats[f"{key}_mean"], stats[f"{key}_std"]
                     # )
 
-                    error = log_cosh(pred_val, target_val)
-                    self.logger.info(f"Sample {i} - log_cosh error of {key} (%): {error:.3f}")
+                    error = relative_lp_error(pred_val, target_val)
+                    self.logger.info(
+                        f"Sample {i} - relative_lp_error error of {key} (%): {error:.3f}"
+                    )
 
                     polydata[f"pred_{key}"] = pred_val.detach().cpu().numpy()
 

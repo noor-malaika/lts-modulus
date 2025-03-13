@@ -16,19 +16,18 @@
 
 import os
 import time
-
 import hydra
 import torch
 import wandb
 from dgl.dataloading import GraphDataLoader
 from hydra.utils import to_absolute_path
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
 
 try:
     import apex
-except:
+except Exception:
     pass
 
 from datapipe.shell_dataset import ShellDataset, Hdf5Dataset
@@ -41,15 +40,27 @@ from modulus.launch.logging.wandb import initialize_wandb
 from modulus.launch.utils import load_checkpoint, save_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 
-from utils import get_datapoint_idx, get_data_splits, save_test_idx, relative_lp_error
-from custom_loss import LogCoshLoss
+from utils import get_datapoint_idx, get_data_splits, save_test_idx
+import importlib
+import utils
+import sys
+import re
+
+sys.argv = [re.sub(r"^--", "", arg) for arg in sys.argv]
+loss_mapping = {
+    "MSELoss": "torch.nn",
+    "LogCoshLoss": "custom_loss",
+    "MRAELoss": "custom_loss",
+    "HuberLoss": "torch.nn",
+}
 
 
 class MGNTrainer:
-    def __init__(self, cfg: DictConfig, dist, rank_zero_logger):
+    def __init__(self, cfg: DictConfig, dist, rank_zero_logger, loss_fn, loss_module):
         self.dist = dist
         self.rank_zero_logger = rank_zero_logger
         self.amp = cfg.amp
+        self.normalization = cfg.normalization
 
         # splitting dataset
         all_idx = get_datapoint_idx(cfg.data_path)
@@ -65,6 +76,7 @@ class MGNTrainer:
             dataset_split=train_hdf5,
             split="train",
             num_samples=cfg.num_training_samples,
+            normalization=self.normalization,
         )
 
         # instantiate validation dataset
@@ -74,6 +86,7 @@ class MGNTrainer:
             dataset_split=val_hdf5,
             split="validation",
             num_samples=cfg.num_validation_samples,
+            normalization=self.normalization,
         )
 
         # instantiate dataloader
@@ -95,7 +108,6 @@ class MGNTrainer:
             pin_memory=True,
             use_ddp=False,
         )
-
 
         # instantiate the model
         self.model = MeshGraphNet(
@@ -126,18 +138,25 @@ class MGNTrainer:
         self.model.train()
 
         # instantiate loss, optimizer, and scheduler
-        # self.criterion = torch.nn.MSELoss()
-        # self.criterion = LogCoshLoss()
-        # self.criterion = MultiComponentLoss()
-        self.criterion = LogCoshLoss()
+        loss_module = importlib.import_module(loss_module)
+        if loss_fn == "MultiComponentLossWithUncertainty":
+            self.criterion = getattr(loss_module, loss_fn)(
+                cfg.loss.components.module, cfg.loss.components.name
+            )
+        else:
+            self.criterion = getattr(loss_module, loss_fn)()
         try:
             self.optimizer = apex.optimizers.FusedAdam(
                 self.model.parameters(), lr=cfg.lr
             )
             rank_zero_logger.info("Using FusedAdam optimizer")
-        except: ##### continue from here
-            # self.optimizer = torch.optim.Adam(list(self.criterion.parameters()) + list(self.model.parameters()), lr=cfg.lr)
-            self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.lr)
+        except Exception:  ##### continue from here
+            loss_params = (
+                list(self.criterion.parameters()) if self.criterion.parameters() else []
+            )
+            self.optimizer = torch.optim.Adam(
+                loss_params + list(self.model.parameters()), lr=cfg.lr
+            )
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer, lr_lambda=lambda epoch: cfg.lr_decay_rate**epoch
         )
@@ -154,6 +173,7 @@ class MGNTrainer:
             scaler=self.scaler,
             device=dist.device,
         )
+        self.metrics = ["mse", "rmse", "relative_rmse", "combined_metric"]
 
     def train(self, graph):
         graph = graph.to(self.dist.device)
@@ -163,7 +183,7 @@ class MGNTrainer:
         self.scheduler.step()
         return loss
 
-    def forward(self, graph):   
+    def forward(self, graph):
         # forward pass
         with autocast(enabled=self.amp):
             pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
@@ -187,86 +207,104 @@ class MGNTrainer:
             return param_group["lr"]
 
     @torch.no_grad()
-    def validation(self):
+    def validation(self, metric):
         error_keys = ["disp_x", "disp_y", "disp_z"]
         errors = {key: 0 for key in error_keys}
-
-        for i,graph in enumerate(self.validation_dataloader):
+        error_fn = getattr(utils, metric)
+        for i, graph in enumerate(self.validation_dataloader):
             graph = graph.to(self.dist.device)
             pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
 
             for index, key in enumerate(error_keys):
                 pred_val = pred[:, index : index + 1]
                 target_val = graph.ndata["y"][:, index : index + 1]
-                ## for prev runs validations were not denormalized
-                # pred_val = self.validation_dataset.denormalize(
-                #     pred_val, self.validation_dataset.node_stats[f'{key}_mean'], self.validation_dataset.node_stats[f'{key}_std']
-                # )
-                # target_val = self.validation_dataset.denormalize(
-                #     target_val, self.validation_dataset.node_stats[f'{key}_mean'], self.validation_dataset.node_stats[f'{key}_std']
-                # )
-                errors[key] += relative_lp_error(pred_val, target_val)
+                if self.normalization == "max_abs":
+                    pred_val = self.validation_dataset.max_abs_denorm(
+                        pred_val, graph.ndata["max_abs"][key]
+                    )
+                    target_val = self.validation_dataset.max_abs_denorm(
+                        target_val, graph.ndata["max_abs"][key]
+                    )
+                elif self.normalization == "z_score":
+                    pred_val = self.validation_dataset.z_score_denorm(
+                        pred_val,
+                        self.validation_dataset.node_stats[f"{key}_mean"],
+                        self.validation_dataset.node_stats[f"{key}_std"],
+                    )
+                    target_val = self.validation_dataset.z_score_denorm(
+                        target_val,
+                        self.validation_dataset.node_stats[f"{key}_mean"],
+                        self.validation_dataset.node_stats[f"{key}_std"],
+                    )
+                errors[key] += error_fn(pred_val, target_val)
 
         for key in error_keys:
             errors[key] = errors[key] / len(self.validation_dataloader)
-            self.rank_zero_logger.info(f"validation error_{key} (%): {errors[key]}")
+            self.rank_zero_logger.info(
+                f"{metric}_validation error_{key} (%): {errors[key]}"
+            )
 
         wandb.log(
             {
-                "val_disp_x_error (%)": errors["disp_x"],
-                "val_disp_y_error (%)": errors["disp_y"],
-                "val_disp_z_error (%)": errors["disp_z"],
+                f"{metric}_val_disp_x_error (%)": errors["disp_x"],
+                f"{metric}_val_disp_y_error (%)": errors["disp_y"],
+                f"{metric}_val_disp_z_error (%)": errors["disp_z"],
             }
         )
 
 
 @hydra.main(version_base="1.3", config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
+    loss_fn = cfg["loss"]
+    loss_module = loss_mapping[loss_fn]
+    run_name = f"loss_{loss_fn}_" f"norm_{cfg.normalization}"
+
     # initialize distributed manager
     DistributedManager.initialize()
     dist = DistributedManager()
-    wandb.login(key=os.environ.get("WANDB_API_KEY")) ### wandb api key
+    wandb.login(key=os.environ.get("WANDB_API_KEY"))  ### wandb api key
 
+    cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     # initialize loggers
     initialize_wandb(
-        project="modulus-shell-run",
+        project="shell_mgn_sweep_v1",
         entity="malaikanoor7864-mnsuam",
-        name="Shell-Training-Log(Cosh)-Loss",
-        group="Shell-Sequential-Group",
+        name=run_name,
+        group="Shell-Sweep-V1",
         mode=cfg.wandb_mode,
+        config=cfg_dict,
     )
 
     logger = PythonLogger("main")  # General python logger
     rank_zero_logger = RankZeroLoggingWrapper(logger, dist)  # Rank 0 logger
     rank_zero_logger.file_logging()
     torch.cuda.empty_cache()
-    trainer = MGNTrainer(cfg, dist, rank_zero_logger)
+    trainer = MGNTrainer(cfg, dist, rank_zero_logger, loss_fn, loss_module)
     start = time.time()
     rank_zero_logger.info("Training started...")
 
     for epoch in range(trainer.epoch_init, cfg.epochs):
         loss_agg = 0
-        rank_zero_logger.info(
-            f"epoch: {epoch}"
-        )
+        rank_zero_logger.info(f"epoch: {epoch}")
 
-        for i,graph in enumerate(trainer.dataloader):
+        for i, graph in enumerate(trainer.dataloader):
             loss = trainer.train(graph)
             loss = loss.detach().cpu().numpy()
             loss_agg += loss
-            wandb.log({"graph_loss_per_epoch":loss})
+            wandb.log({"graph_loss_per_epoch": loss})
             rank_zero_logger.info(
-            f"\tgraph_{i}_loss_per_epoch: {loss:10.3e}, lr: {trainer.get_lr()}"
+                f"\tgraph_{i}_loss_per_epoch: {loss:10.3e}, lr: {trainer.get_lr()}"
             )
         loss_agg /= len(trainer.dataloader)
         rank_zero_logger.info(
-            f"epoch: {epoch}, loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}"
+            f"epoch: {epoch}, {loss_fn}_loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}"
         )
         wandb.log({"loss": loss_agg})
 
         # validation
         if dist.rank == 0:
-            trainer.validation()
+            for metric in trainer.metrics:
+                trainer.validation(metric)
 
         # save checkpoint
         if dist.world_size > 1:
@@ -281,8 +319,9 @@ def main(cfg: DictConfig) -> None:
                 epoch=epoch,
             )
             rank_zero_logger.info(f"Saved model on rank {dist.rank}")
-            start = time.time()
+    end = time.time()
     rank_zero_logger.info("Training completed!")
+    rank_zero_logger.info(f"Total time spent for {run_name}: {end-start:.4f}")
 
 
 if __name__ == "__main__":

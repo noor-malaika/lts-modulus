@@ -1,0 +1,10 @@
+program: /home/sces213/Malaika/lts_modulus/shell_mgn/train.py
+name: sweep_v1
+method: random
+project: shell_mgn_sweep_v1
+entity: malaikanoor7864-mnsuam
+parameters:
+    loss:
+        values: ["MSELoss", "LogCoshLoss", "MRAELoss", "HuberLoss"]
+    normalization:
+        values: ["z_score"]

@@ -14,67 +14,47 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import dgl
 import numpy as np
 import torch
-import vtk
-from torch import Tensor
+
 
 try:
     import pyvista as pv
-except:
+except Exception:
     raise ImportError(
         "Stokes Dataset requires the pyvista library. Install with "
         + "pip install pyvista"
     )
 import h5py
 from collections import defaultdict
+import torch.nn.functional as F
+
 
 def get_datapoint_idx(data_path):
     all_idx = []
-    with h5py.File(data_path, 'r') as data_file:
+    with h5py.File(data_path, "r") as data_file:
         for variant in data_file.keys():
             for subcase in data_file[variant]:
                 all_idx.append((variant, subcase))
     return all_idx
 
+
 def get_data_splits(idx):
     np.random.shuffle(idx)
-    train_idx = idx[:int(0.7*(len(idx)))]
-    val_idx = idx[int(0.7*(len(idx))):int(0.85*len(idx))]
-    test_idx = idx[int(0.85*len(idx)):]
+    train_idx = idx[: int(0.7 * (len(idx)))]
+    val_idx = idx[int(0.7 * (len(idx))) : int(0.85 * len(idx))]
+    test_idx = idx[int(0.85 * len(idx)) :]
     return train_idx, val_idx, test_idx
 
+
 def save_test_idx(idx):
-    # with open("test_idx_json.json", 'w') as file:
-    #     json.dump(idx, file)
     torch.save(idx, "test_idx.pt")
+
 
 def load_test_idx(file="test_idx.pt"):
     idx = torch.load(file)
     return idx
 
-def relative_lp_error(pred, y, p=2):
-    """
-    Calculate relative L2 error norm
-
-    Parameters:
-    -----------
-    pred: torch.Tensor
-        Prediction
-    y: torch.Tensor
-        Ground truth
-
-    Returns:
-    --------
-    error: float
-        Calculated relative L2 error norm (percentage) on cpu
-    """
-
-    error = torch.mean(torch.norm(pred - y, p=p) / torch.norm(y, p=p)).cpu().numpy()
-    return error * 100
-
-## functions for pi-fine tuning
 def edges_to_triangles(edge_list):
     """
     Infer triangles from an edge list assuming the mesh is made of connected trias.
@@ -94,181 +74,137 @@ def edges_to_triangles(edge_list):
     for n1, n2 in edge_list:
         neighbors[n1].add(n2)
         neighbors[n2].add(n1)
-    
+
     triangles = set()
     for n1, adj_nodes in neighbors.items():
         for n2 in adj_nodes:
             for n3 in neighbors[n2]:
                 if n3 in neighbors[n1] and n1 < n2 < n3:  # Sort to avoid duplicates
                     triangles.add((n1, n2, n3))
-    
+
     return list(triangles)
 
-def create_vtk_from_graph(data_dict):
-    
-    points = data_dict["pos"]
-    edge_list = data_dict["connectivity"]
-    
-    triangles = edges_to_triangles(edge_list)
-    faces = convert_egdes_to_trias(triangles)
-    polydata = pv.PolyData(points, faces)
-
-    polydata["disp_x"] ,polydata["disp_y"], polydata["disp_z"] = [data_dict["y"][:, i] for i in range(3)]
-    return polydata
 
 def convert_egdes_to_trias(triangles):
-    # Flatten edge list to VTK's format for lines
     faces = []
     for tri in triangles:
         faces.extend([3, *tri])
     faces = np.array(faces)
     return faces
 
+
+def create_vtk_from_graph(data_dict):
+
+    points = data_dict["pos"]
+    edge_list = data_dict["connectivity"]
+
+    triangles = edges_to_triangles(edge_list)
+    faces = convert_egdes_to_trias(triangles)
+    polydata = pv.PolyData(points, faces)
+
+    polydata["disp_x"], polydata["disp_y"], polydata["disp_z"] = [
+        data_dict["y"][:, i] for i in range(3)
+    ]
+    return polydata
+
+
+def mse(pred, y, p=2):
+    """
+    Calculate relative L2 error norm
+
+    Parameters:
+    -----------
+    pred: torch.Tensor
+        Prediction
+    y: torch.Tensor
+        Ground truth
+
+    Returns:
+    --------
+    error: float
+        Calculated relative L2 error norm (percentage) on cpu
+    """
+
+    error = torch.mean(torch.norm(pred - y, p=p) / torch.norm(y, p=p)).cpu().numpy()
+    return error * 100
+
+
+def relative_rmse(pred, y):
+    error = (
+        torch.sqrt(torch.mean(torch.norm(pred - y, p=2) / torch.norm(y, p=2)))
+        .cpu()
+        .numpy()
+    )
+    return error * 100
+
+
+def rmse(pred, y):
+    """
+    Compute the Root Mean Squared Error (RMSE) between predicted and true values.
+
+    Args:
+        pred (torch.Tensor): Predicted values.
+        y (torch.Tensor): Ground truth values.
+
+    Returns:
+        float: RMSE value.
+    """
+    error = torch.sqrt(torch.mean((pred - y) ** 2))  # Standard RMSE
+    return error.item() * 100  # Convert to scalar and scale by 100
+
+
+def cosine_similarity(pred, true):
+    """
+    Compute the Cosine Similarity between predicted and true values.
+
+    Args:
+        pred (torch.Tensor): Predicted values.
+        true (torch.Tensor): Ground truth values.
+
+    Returns:
+        torch.Tensor: Cosine Similarity value (ranges from -1 to 1).
+    """
+    # Flatten the tensors to compute cosine similarity
+    pred_flat = pred.view(pred.size(0), -1)
+    true_flat = true.view(true.size(0), -1)
+
+    # Compute cosine similarity
+    return F.cosine_similarity(pred_flat, true_flat).mean()
+
+
+def combined_metric(pred, true, alpha=0.5):
+    """
+    Compute a combined metric that balances RMSE and Cosine Similarity.
+
+    Args:
+        pred (torch.Tensor): Predicted values.
+        true (torch.Tensor): Ground truth values.
+        alpha (float): Weight for RMSE (default: 0.5).
+
+    Returns:
+        torch.Tensor: Combined metric value.
+    """
+    rmse_value = rmse(pred, true)
+    cos_sim_value = cosine_similarity(pred, true)
+
+    # Combine RMSE and Cosine Similarity
+    return alpha * rmse_value + (1 - alpha) * (1 - cos_sim_value)
+
+
 def relative_mae(pred, true, eps=1e-8):
-    return ((torch.sum(torch.abs(pred - true)) / torch.sum(torch.abs(true) + eps)).item()) * 100
+    return (
+        (torch.sum(torch.abs(pred - true)) / torch.sum(torch.abs(true) + eps)).item()
+    ) * 100
+
 
 def mrae(preds, trues, eps=1e-8):
-        relative_errors = torch.abs(preds - trues) / (torch.abs(trues) + eps)
-        return 100 * torch.mean(relative_errors)
-
-def max_abs_normalize(data):
-    max_abs = torch.max(torch.abs(data))
-    return data / max_abs
+    relative_errors = torch.abs(preds - trues) / (torch.abs(trues) + eps)
+    return 100 * torch.mean(relative_errors)
 
 
 def log_cosh(pred, true):
     log_cosh_loss = torch.mean(torch.log(torch.cosh(pred - true)))
     return log_cosh_loss * 100
 
+
 ####### need to change
-# Inflow boundary condition
-def parabolic_inflow(y, U_max):
-    """parabolic inflow"""
-    u = 4 * U_max * y * (0.4 - y) / (0.4**2)
-    v = np.zeros_like(y)
-    return u, v
-
-
-def get_dataset(path, return_graph=False):
-    """get_dataset file."""
-    pv_mesh = pv.read(path)
-
-    coords = np.array(pv_mesh.points[:, 0:2])
-
-    # Extract the boundary markers
-    mask = pv_mesh.point_data["marker"]
-
-    ## this mask is used to classify different boundary conditions 
-    ## in a computational fluid dynamics (CFD) problem
-    inflow_coord_idx = mask == 1
-    outflow_coord_idx = mask == 2
-    wall_coords_idx = mask == 3
-    polygon_coords_idx = mask == 4
-
-    inflow_coords = coords[inflow_coord_idx]
-    outflow_coords = coords[outflow_coord_idx]
-    wall_coords = coords[wall_coords_idx]
-    polygon_coords = coords[polygon_coords_idx]
-
-    ref_u = np.array(pv_mesh.point_data["u"]).reshape(-1, 1)
-    ref_v = np.array(pv_mesh.point_data["v"]).reshape(-1, 1)
-    ref_p = np.array(pv_mesh.point_data["p"]).reshape(-1, 1)
-
-    gnn_u = np.array(pv_mesh.point_data["pred_u"]).reshape(-1, 1)
-    gnn_v = np.array(pv_mesh.point_data["pred_v"]).reshape(-1, 1)
-    gnn_p = np.array(pv_mesh.point_data["pred_p"]).reshape(-1, 1)
-
-    nu = 0.01
-
-    if return_graph:
-        # generate DGL graph
-        polys = pv_mesh.GetPolys()
-        polys.InitTraversal()
-        edge_list = []
-        id_list = vtk.vtkIdList()
-        for _ in range(polys.GetNumberOfCells()):
-            polys.GetNextCell(id_list)
-            num_ids = id_list.GetNumberOfIds()
-            for j in range(num_ids):
-                edge_list.append(  # noqa: PERF401
-                    (id_list.GetId(j), id_list.GetId((j + 1) % num_ids))
-                )
-
-        graph = dgl.graph(edge_list, idtype=torch.int32)
-
-        # Assign node features using the vertex data
-        points = pv_mesh.GetPoints()
-        vertices = np.array(
-            [points.GetPoint(i) for i in range(points.GetNumberOfPoints())]
-        )
-        graph.ndata["pos"] = torch.tensor(vertices[:, :2], dtype=torch.float32)
-
-        # Add one-hot embedding of markers
-        point_data = pv_mesh.GetPointData()
-        marker = np.array(point_data.GetArray("marker"))
-        num_classes = 5
-        one_hot_marker = np.eye(num_classes)[marker.astype(int)]
-        graph.ndata["marker"] = torch.tensor(one_hot_marker, dtype=torch.float32)
-
-        # Extract node attributes from the vtkPolyData
-        for i in range(point_data.GetNumberOfArrays()):
-            array = point_data.GetArray(i)
-            array_name = array.GetName()
-            if array_name in ["u", "v", "p"]:
-                array_data = np.zeros(
-                    (points.GetNumberOfPoints(), array.GetNumberOfComponents())
-                )
-                for j in range(points.GetNumberOfPoints()):
-                    array.GetTuple(j, array_data[j])
-
-                # Assign node attributes to the DGL graph
-                graph.ndata[array_name] = torch.tensor(array_data, dtype=torch.float32)
-
-        # compute freq features
-        B = 10 * torch.randn((2, 64)) # 128 additional input dim that goes to MGN
-        x_proj = torch.matmul(graph.ndata["pos"], B)
-        x_proj = torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
-        graph.ndata["freq"] = x_proj
-
-        graph.ndata["x"] = torch.cat(
-            [graph.ndata[key] for key in ["pos", "marker", "freq"]], dim=-1
-        )
-        graph.ndata["y"] = torch.cat(
-            [graph.ndata[key] for key in ["u", "v", "p"]], dim=-1
-        )
-
-        pos = graph.ndata["pos"]
-        row, col = graph.edges()
-        disp = torch.tensor(pos[row.long()] - pos[col.long()])
-        disp_norm = torch.linalg.norm(disp, dim=-1, keepdim=True)
-        graph.edata["x"] = torch.cat((disp, disp_norm), dim=-1)
-        return (
-            ref_u,
-            ref_v,
-            ref_p,
-            gnn_u,
-            gnn_v,
-            gnn_p,
-            coords,
-            inflow_coords,
-            outflow_coords,
-            wall_coords,
-            polygon_coords,
-            nu,
-            graph,
-        )
-    else:
-        return (
-            ref_u,
-            ref_v,
-            ref_p,
-            gnn_u,
-            gnn_v,
-            gnn_p,
-            coords,
-            inflow_coords,
-            outflow_coords,
-            wall_coords,
-            polygon_coords,
-            nu,
-        )

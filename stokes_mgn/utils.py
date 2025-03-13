@@ -22,7 +22,7 @@ from torch import Tensor
 
 try:
     import pyvista as pv
-except:
+except Exception as e:
     raise ImportError(
         "Stokes Dataset requires the pyvista library. Install with "
         + "pip install pyvista"

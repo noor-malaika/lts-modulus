@@ -31,7 +31,7 @@ from utils import relative_lp_error
 try:
     from dgl import DGLGraph
     from dgl.dataloading import GraphDataLoader
-except:
+except Exception as e:
     raise ImportError(
         "Stokes  example requires the DGL library. Install the "
         + "desired CUDA version at: \n https://www.dgl.ai/pages/start.html"
@@ -39,7 +39,7 @@ except:
 
 try:
     import pyvista as pv
-except:
+except Exception as e:
     raise ImportError(
         "Stokes  Dataset requires the pyvista library. Install with "
         + "pip install pyvista"

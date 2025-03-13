@@ -1,29 +1,14 @@
-# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
-# SPDX-FileCopyrightText: All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 hydra:
-  job:
-    chdir: True
-  run:
-    dir: /home/sces213/Malaika/lts_modulus/shell_mgn/outputs/
-  
-ckpt_path: "/home/sces213/Malaika/lts_modulus/shell_mgn/checkpoints"
-ckpt_name: "/home/sces213/Malaika/lts_modulus/shell_mgn/shell.pt"
-data_path: "/home/sces213/Malaika/lts_modulus/shell_mgn/dataset/dataset.hdf5" # -> path to hdf5
-results_dir: "/home/sces213/Malaika/lts_modulus/shell_mgn/results"
+    run:
+        dir: ./shell_mgn/sweep_v1/outputs/${hydra.job.override_dirname}
+    job:
+        chdir: True
+
+ckpt_path: ./shell_mgn/sweep_v1/checkpoints/${hydra:job.override_dirname}
+ckpt_name: ./shell.pt
+data_path: /home/sces213/Malaika/lts_modulus/shell_mgn/dataset/dataset.hdf5 # -> path to hdf5
+results_dir: ./shell_mgn/sweep_v1/results/${hydra:job.override_dirname}
 
 input_dim_nodes: 11 # 3d pos, 1d ntype, 1d thickness, 3d spc 3d force | ndata -> pos(2d) ,markers 5 ; not sure
 input_dim_edges: 5 # 3d disp, 1d norm, 1d etypes | edata -> disp_vector(2d) , disp_norm
@@ -34,11 +19,11 @@ hidden_dim_node_decoder: 256
 
 aggregation: "sum"
 batch_size: 1
-epochs: 500
+epochs: 50
 
 num_training_samples: 500
-num_validation_samples: 10
-num_test_samples: 10
+num_validation_samples: 7
+num_test_samples: 7
 
 lr: 1e-4
 lr_decay_rate: 0.99985
@@ -47,13 +32,21 @@ amp: False
 jit: False
 wandb_mode: "online"
 
-# Physics-informed constants
-graph_path: "graph_9.vtp"
+## loss and normalization is accessed as in sweep.yaml, can't remove from here that says not defined in config
+normalization:
+    z_score:
+        name: z_score
 
-mlp_hidden_dim: 256
-mlp_num_layers: 6
-mlp_input_dim: 2
-mlp_output_dim: 3
-
-pi_iters: 10000
-pi_lr: 0.001
+loss:
+    mse:
+        module: torch.nn
+        name: MSELoss
+    huber:
+        name: HuberLoss
+        module: torch.nn
+    log_cosh:
+        module: custom_loss
+        name: LogCoshLoss
+    mrae:
+        module: custom_loss
+        name: MRAELoss

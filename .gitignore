@@ -14,3 +14,4 @@ shell_mgn/results
 shell_mgn/checkpoints
 shell_mgn/__pycache__
 nohup*
+shell_mgn/sweep

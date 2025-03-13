@@ -1,0 +1,7 @@
+program: shell_mgn/train.py
+method: random
+parameters:
+  loss:
+    values: [mse, log_cosh, mrae, huber]
+  normalization:
+    values: [z_score, max_abs]

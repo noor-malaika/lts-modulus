@@ -25,24 +25,21 @@ from hydra.utils import to_absolute_path
 from omegaconf import DictConfig
 
 try:
-    import apex
-except:
+    pass
+except Exception:
     pass
 
 try:
     import pyvista as pv
-except:
+except Exception:
     raise ImportError(
         "Stokes Dataset requires the pyvista library. Install with "
         + "pip install pyvista"
     )
 
-from collections import OrderedDict
-from typing import Dict, Optional
 
 from modulus.launch.logging import (
     PythonLogger,
-    RankZeroLoggingWrapper,
 )
 from modulus.launch.logging.wandb import initialize_wandb
 from modulus.models.meshgraphnet import MeshGraphNet
@@ -51,7 +48,7 @@ from modulus.sym.eq.phy_informer import PhysicsInformer
 from modulus.sym.eq.spatial_grads.spatial_grads import compute_connectivity_tensor
 from sympy import Function, Number, Symbol
 
-from utils import get_dataset, relative_lp_error
+from utils import get_dataset
 
 
 class Stokes(PDE):

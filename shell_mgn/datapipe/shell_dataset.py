@@ -24,13 +24,12 @@ except ImportError:
     )
 import h5py
 
-
-### [3,1,9,0]
 class Hdf5Dataset:
     """
-        split_arr: array containing shuffled inidices tuples of data (separate for train,val etc)
-        data_path: path to 
+    split_arr: array containing shuffled inidices tuples of data (separate for train,val etc)
+    data_path: path to
     """
+
     def __init__(self, data_path, split_arr, length):
         self.data_path = data_path
         self.split_arr = split_arr
@@ -64,11 +63,12 @@ class ShellDataset(DGLDataset):
         normalize_keys=["disp_x", "disp_y", "disp_z", "load", "thickness"],
         force_reload=False,
         name="dataset",
-        verbose=False
+        verbose=False,
+        normalization=None,
     ):
         """
-            dataset_split: Hdf5Dataset object
-            split: name of split
+        dataset_split: Hdf5Dataset object
+        split: name of split
         """
         super().__init__(
             name=name,
@@ -80,7 +80,8 @@ class ShellDataset(DGLDataset):
         self.input_keys = invar_keys
         self.output_keys = outvar_keys
         self.dataset_split = dataset_split
-        
+        self.normalize_keys = normalize_keys
+
         print(f"Preparing the {split} dataset...")
         self.length = min(len(self.dataset_split), self.num_samples)
 
@@ -89,58 +90,28 @@ class ShellDataset(DGLDataset):
                 f"Number of available {split} dataset entries "
                 f"({self.length}) is less than the number of samples "
                 f"({self.num_samples})"
-        )
+            )
 
         self.graphs = []
         for i in range(self.length):
             data_i = self.dataset_split[i]
             graph = self._create_dgl_graph(data_i)
             self.graphs.append(graph)
-        
-        # if split == "train":
-        #     self.node_stats = self._get_node_stats(keys=normalize_keys)
-        #     self.edge_stats = self._get_edge_stats()
-        # else:
-        #     self.node_stats = load_json("node_stats.json")
-        #     self.edge_stats = load_json("edge_stats.json")
 
-        # # labels are added here
-        # self.graphs = self.normalize_node()
-        # self.graphs = self.normalize_edge()
+        if normalization == "z_score":
+            if split == "train":
+                self.node_stats = self._get_node_stats(keys=self.normalize_keys)
+                self.edge_stats = self._get_edge_stats()
+            else:
+                self.node_stats = load_json("node_stats.json")
+                self.edge_stats = load_json("edge_stats.json")
 
-        # Normalize node features using Max-Abs normalization
-        for i in range(len(self.graphs)):
-            for key in normalize_keys:
-                # Apply Max-Abs normalization to each node feature
-                max_abs = torch.max(torch.abs(self.graphs[i].ndata[key]))
-                self.graphs[i].ndata[key] = self.graphs[i].ndata[key] / max_abs
+            # labels are added here
+            self.graphs = self.z_score_norm_node()
+            self.graphs = self.z_score_norm_edge()
 
-            # Concatenate input features into "x"
-            self.graphs[i].ndata["x"] = torch.cat(
-                [
-                    self.graphs[i].ndata[key].view(-1, 1) if self.graphs[i].ndata[key].dim() == 1 else self.graphs[i].ndata[key]
-                    for key in self.input_keys
-                ], dim=-1
-            )
-
-            # Concatenate output features into "y"
-            self.graphs[i].ndata["y"] = torch.cat(
-                [
-                    self.graphs[i].ndata[key].view(-1, 1) if self.graphs[i].ndata[key].dim() == 1 else self.graphs[i].ndata[key]
-                    for key in self.output_keys
-                ], dim=-1
-            )
-
-            # Normalize edge features using Max-Abs normalization
-            # Apply Max-Abs normalization to edge features
-            max_abs_edge = torch.max(torch.abs(self.graphs[i].edata["x"]))
-            self.graphs[i].edata["x"] = self.graphs[i].edata["x"] / max_abs_edge
-
-            # Concatenate edge types (if applicable)
-            self.graphs[i].edata["x"] = torch.cat(
-                (self.graphs[i].edata["x"], self.etypes[i].view(-1, 1)), dim=-1
-            )
-
+        elif normalization == "max_abs":
+            self.graphs = self.max_abs_norm()
 
     def __getitem__(self, idx):
         graph = self.graphs[idx]
@@ -149,7 +120,55 @@ class ShellDataset(DGLDataset):
     def __len__(self):
         return self.length
 
-    def normalize_node(self):
+    def max_abs_norm(self):
+        for i in range(len(self.graphs)):
+            self.graphs[i].ndata["max_abs"] = {}
+            for key in self.normalize_keys:
+                # Apply Max-Abs normalization to each node feature
+                max_abs = torch.max(torch.abs(self.graphs[i].ndata[key]))
+                self.graphs[i].ndata["max_abs"][key] = max_abs
+                self.graphs[i].ndata[key] = self.graphs[i].ndata[key] / max_abs
+
+            # Concatenate input features into "x"
+            self.graphs[i].ndata["x"] = torch.cat(
+                [
+                    (
+                        self.graphs[i].ndata[key].view(-1, 1)
+                        if self.graphs[i].ndata[key].dim() == 1
+                        else self.graphs[i].ndata[key]
+                    )
+                    for key in self.input_keys
+                ],
+                dim=-1,
+            )
+
+            # Concatenate output features into "y"
+            self.graphs[i].ndata["y"] = torch.cat(
+                [
+                    (
+                        self.graphs[i].ndata[key].view(-1, 1)
+                        if self.graphs[i].ndata[key].dim() == 1
+                        else self.graphs[i].ndata[key]
+                    )
+                    for key in self.output_keys
+                ],
+                dim=-1,
+            )
+
+            # Apply Max-Abs normalization to edge features
+            max_abs_edge = torch.max(torch.abs(self.graphs[i].edata["x"]))
+            self.graphs[i].edata["x"] = self.graphs[i].edata["x"] / max_abs_edge
+
+            # Concatenate edge types (if applicable)
+            self.graphs[i].edata["x"] = torch.cat(
+                (self.graphs[i].edata["x"], self.etypes[i].view(-1, 1)), dim=-1
+            )
+        return self.graphs
+
+    def max_abs_denorm(self, data, max_abs):
+        return data * max_abs
+
+    def z_score_norm_node(self):
         """normalizes node features"""
         invar_keys = set(
             [
@@ -163,31 +182,34 @@ class ShellDataset(DGLDataset):
             for key in invar_keys:
                 self.graphs[i].ndata[key] = (
                     self.graphs[i].ndata[key] - self.node_stats[key + "_mean"]
-                ) / (self.node_stats[key + "_std"]+epsilon)
-            
-            # self.graphs[i].ndata["x"] = torch.cat(
-            #     [self.graphs[i].ndata[key] for key in self.input_keys], dim=-1
-            # )
+                ) / (self.node_stats[key + "_std"] + epsilon)
+
             self.graphs[i].ndata["x"] = torch.cat(
                 [
-                    self.graphs[i].ndata[key].view(-1, 1) if self.graphs[i].ndata[key].dim() == 1 else self.graphs[i].ndata[key]
+                    (
+                        self.graphs[i].ndata[key].view(-1, 1)
+                        if self.graphs[i].ndata[key].dim() == 1
+                        else self.graphs[i].ndata[key]
+                    )
                     for key in self.input_keys
-                ], dim=-1
+                ],
+                dim=-1,
             )
-            
-            # self.graphs[i].ndata["y"] = torch.cat(
-            #     [self.graphs[i].ndata[key] for key in self.output_keys], dim=-1
-            # )
 
             self.graphs[i].ndata["y"] = torch.cat(
                 [
-                    self.graphs[i].ndata[key].view(-1, 1) if self.graphs[i].ndata[key].dim() == 1 else self.graphs[i].ndata[key]
+                    (
+                        self.graphs[i].ndata[key].view(-1, 1)
+                        if self.graphs[i].ndata[key].dim() == 1
+                        else self.graphs[i].ndata[key]
+                    )
                     for key in self.output_keys
-                ], dim=-1
+                ],
+                dim=-1,
             )
         return self.graphs
 
-    def normalize_edge(self):
+    def z_score_norm_edge(self):
         """normalizes a tensor"""
         for i in range(len(self.graphs)):
             self.graphs[i].edata["x"] = (
@@ -195,17 +217,16 @@ class ShellDataset(DGLDataset):
             ) / self.edge_stats["edge_std"]
 
             self.graphs[i].edata["x"] = torch.cat(
-                (self.graphs[i].edata["x"], self.etypes[i].view(-1, 1))
-            , dim=-1)
+                (self.graphs[i].edata["x"], self.etypes[i].view(-1, 1)), dim=-1
+            )
 
         return self.graphs
 
     @staticmethod
-    def denormalize(invar, mu, std):
+    def z_score_denorm(invar, mu, std):
         """denormalizes a tensor"""
         denormalized_invar = invar * std + mu
         return denormalized_invar
-
 
     def _get_edge_stats(self):
         stats = {
@@ -254,7 +275,6 @@ class ShellDataset(DGLDataset):
         save_json(stats, "node_stats.json")
         return stats
 
-
     def _create_dgl_graph(self, data_i, to_bidirected=True, dtype=torch.int32):
         edge_list = data_i["connectivity"].tolist()
         graph = dgl.graph(edge_list, idtype=dtype)
@@ -263,7 +283,9 @@ class ShellDataset(DGLDataset):
 
         graph.ndata["pos"] = torch.tensor(data_i["pos"], dtype=torch.float32)
         graph.ndata["ntypes"] = torch.tensor(data_i["ntypes"], dtype=torch.float32)
-        graph.ndata["thickness"] = torch.tensor(data_i["thickness"], dtype=torch.float32)
+        graph.ndata["thickness"] = torch.tensor(
+            data_i["thickness"], dtype=torch.float32
+        )
         graph.ndata["spc"] = torch.tensor(data_i["spc"], dtype=torch.float32)
         graph.ndata["load"] = torch.tensor(data_i["load"], dtype=torch.float32)
 
@@ -278,12 +300,11 @@ class ShellDataset(DGLDataset):
         # Adjust etypes for bidirected graph
         etypes = torch.tensor(data_i["etypes"], dtype=torch.float32)
         if to_bidirected:
-            etypes = torch.cat([etypes, etypes])  # Duplicate etypes for bidirected edges
+            etypes = torch.cat(
+                [etypes, etypes]
+            )  # Duplicate etypes for bidirected edges
 
         self.etypes.append(etypes)
-
-        # self.etypes.append(torch.tensor(data_i["etypes"], dtype=torch.float32))
-
         graph.edata["x"] = torch.cat((disp, disp_norm), dim=-1)
 
         return graph

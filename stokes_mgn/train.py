@@ -28,7 +28,7 @@ from torch.nn.parallel import DistributedDataParallel
 
 try:
     import apex
-except:
+except Exception as e:
     pass
 
 from modulus.datapipes.gnn.stokes_dataset import StokesDataset
@@ -121,7 +121,7 @@ class MGNTrainer:
                 self.model.parameters(), lr=cfg.lr
             )
             rank_zero_logger.info("Using FusedAdam optimizer")
-        except: ##### continue from here
+        except Exception as e: ##### continue from here
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.lr)
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer, lr_lambda=lambda epoch: cfg.lr_decay_rate**epoch

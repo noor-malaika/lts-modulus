@@ -26,12 +26,12 @@ from omegaconf import DictConfig
 
 try:
     import apex
-except:
+except Exception as e:
     pass
 
 try:
     import pyvista as pv
-except:
+except Exception as e:
     raise ImportError(
         "Stokes Dataset requires the pyvista library. Install with "
         + "pip install pyvista"
