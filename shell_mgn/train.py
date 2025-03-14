@@ -52,11 +52,12 @@ loss_mapping = {
     "LogCoshLoss": "custom_loss",
     "MRAELoss": "custom_loss",
     "HuberLoss": "torch.nn",
+    "MultiComponentLossWithUncertainty": "custom_loss"
 }
 
 
 class MGNTrainer:
-    def __init__(self, cfg: DictConfig, dist, rank_zero_logger, loss_fn, loss_module):
+    def __init__(self, cfg: DictConfig, dist, rank_zero_logger, main_loss_fn, main_loss_module):
         self.dist = dist
         self.rank_zero_logger = rank_zero_logger
         self.amp = cfg.amp
@@ -138,13 +139,13 @@ class MGNTrainer:
         self.model.train()
 
         # instantiate loss, optimizer, and scheduler
-        loss_module = importlib.import_module(loss_module)
-        if loss_fn == "MultiComponentLossWithUncertainty":
-            self.criterion = getattr(loss_module, loss_fn)(
-                cfg.loss.components.module, cfg.loss.components.name
+        main_loss_module = importlib.import_module(main_loss_module)
+        if main_loss_fn == "MultiComponentLossWithUncertainty":
+            self.criterion = getattr(main_loss_module, main_loss_fn)(
+                loss_mapping[cfg.loss], cfg.loss
             )
         else:
-            self.criterion = getattr(loss_module, loss_fn)()
+            self.criterion = getattr(main_loss_module, main_loss_fn)()
         try:
             self.optimizer = apex.optimizers.FusedAdam(
                 self.model.parameters(), lr=cfg.lr
@@ -253,12 +254,17 @@ class MGNTrainer:
         )
 
 
-@hydra.main(version_base="1.3", config_path="conf", config_name="config")
+@hydra.main(version_base="1.3", config_path="conf/multi_comp", config_name="config")
 def main(cfg: DictConfig) -> None:
-    loss_fn = cfg["loss"]
-    loss_module = loss_mapping[loss_fn]
-    run_name = f"loss_{loss_fn}_" f"norm_{cfg.normalization}"
-
+    if not cfg.main_loss:
+        main_loss_fn = cfg["loss"]
+        main_loss_module = loss_mapping[main_loss_fn]
+        run_name = f"loss_{main_loss_fn}_norm_{cfg.normalization}"
+    else:
+        main_loss_fn = cfg["main_loss"]
+        main_loss_module = loss_mapping[main_loss_fn]
+        run_name = f"main_loss_{main_loss_fn}_loss_{cfg.loss}"
+    
     # initialize distributed manager
     DistributedManager.initialize()
     dist = DistributedManager()
@@ -267,10 +273,10 @@ def main(cfg: DictConfig) -> None:
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     # initialize loggers
     initialize_wandb(
-        project="shell_mgn_sweep_v1",
+        project="shell_mgn_sweep_v2",
         entity="malaikanoor7864-mnsuam",
         name=run_name,
-        group="Shell-Sweep-V1",
+        group="Shell-Sweep-V2",
         mode=cfg.wandb_mode,
         config=cfg_dict,
     )
@@ -279,7 +285,7 @@ def main(cfg: DictConfig) -> None:
     rank_zero_logger = RankZeroLoggingWrapper(logger, dist)  # Rank 0 logger
     rank_zero_logger.file_logging()
     torch.cuda.empty_cache()
-    trainer = MGNTrainer(cfg, dist, rank_zero_logger, loss_fn, loss_module)
+    trainer = MGNTrainer(cfg, dist, rank_zero_logger, main_loss_fn, main_loss_module)
     start = time.time()
     rank_zero_logger.info("Training started...")
 
@@ -297,7 +303,7 @@ def main(cfg: DictConfig) -> None:
             )
         loss_agg /= len(trainer.dataloader)
         rank_zero_logger.info(
-            f"epoch: {epoch}, {loss_fn}_loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}"
+            f"epoch: {epoch}, {main_loss_fn}_loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}"
         )
         wandb.log({"loss": loss_agg})
 

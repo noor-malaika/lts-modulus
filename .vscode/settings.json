@@ -1,5 +1,6 @@
 {
     "debugpy.debugJustMyCode": false,
     "search.useParentIgnoreFiles": false,
-    "search.useGlobalIgnoreFiles": true
+    "search.useGlobalIgnoreFiles": true,
+    "python.languageServer": "Pylance"
 }

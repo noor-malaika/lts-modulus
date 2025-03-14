@@ -1,3 +1,4 @@
+__pycache__
 .env
 checkpoints*
 results*
@@ -13,5 +14,6 @@ shell_mgn/outputs
 shell_mgn/results
 shell_mgn/checkpoints
 shell_mgn/__pycache__
-nohup*
+*.out
 shell_mgn/sweep
+wandb

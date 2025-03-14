@@ -69,6 +69,7 @@ class MultiComponentLossWithUncertainty(nn.Module):
         super(MultiComponentLossWithUncertainty, self).__init__()
         self.log_vars = nn.Parameter(torch.zeros(num_components))  # Learnable weights
         base_loss_module = importlib.import_module(base_loss_module)
+        self.components = num_components
         self.base_loss_fn = getattr(
             base_loss_module, base_loss_fn
         )()  # Single loss function for all components
@@ -85,13 +86,13 @@ class MultiComponentLossWithUncertainty(nn.Module):
             Tensor: Weighted total loss.
         """
         assert pred.shape == target.shape, "Mismatch in shape between pred and target"
-        losses = self.base_loss_fn(pred, target)  # Compute loss per component
 
         total_loss = 0.0
-        for i in range(losses.shape[1]):  # Iterate over components
+        for i in range(self.components):  # Iterate over components
+            losses = self.base_loss_fn(pred[:, i], target[:, i])  # Compute loss per component
             precision = torch.exp(-self.log_vars[i])  # Precision term (1/σ²)
             weighted_loss = (
-                precision * losses[:, i].mean() + self.log_vars[i]
+                precision * losses + self.log_vars[i]
             )  # Weighted loss
             total_loss += weighted_loss
 

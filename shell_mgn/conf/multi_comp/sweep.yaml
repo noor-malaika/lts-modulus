@@ -1,7 +1,12 @@
-program: shell_mgn/train.py
+program: /home/sces213/Malaika/lts_modulus/shell_mgn/train.py
+name: sweep_v2
 method: random
+project: shell_mgn_sweep_v2
+entity: malaikanoor7864-mnsuam
 parameters:
   loss:
-    values: [mse, log_cosh, mrae, huber]
-  normalization:
-    values: [z_score, max_abs]
+    values: ["MSELoss", "LogCoshLoss", "MRAELoss", "HuberLoss"]
+  main_loss:
+    values: ["MultiComponentLossWithUncertainty"]
+stopping_criteria:
+  count: 4
