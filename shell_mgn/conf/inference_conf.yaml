@@ -1,0 +1,43 @@
+hydra:
+    run:
+        dir: ./shell_mgn/sweep_v2/outputs/loss=MSELoss,main_loss=MultiComponentLossWithUncertainty
+    job:
+        chdir: True
+
+test_idx: ./shell_mgn/sweep_v2/outputs/loss=MSELoss,main_loss=MultiComponentLossWithUncertainty/test_idx.pt
+ckpt_path: ./shell_mgn/sweep_v2/checkpoints/loss=MSELoss,main_loss=MultiComponentLossWithUncertainty
+ckpt_name: ./shell.pt
+data_path: /home/sces213/Malaika/lts_modulus/shell_mgn/dataset/dataset.hdf5 # -> path to hdf5
+results_dir: ./shell_mgn/sweep_v2/results/loss=MSELoss,main_loss=MultiComponentLossWithUncertainty
+
+input_dim_nodes: 11 # 3d pos, 1d ntype, 1d thickness, 3d spc 3d force | ndata -> pos(2d) ,markers 5 ; not sure
+input_dim_edges: 5 # 3d disp, 1d norm, 1d etypes | edata -> disp_vector(2d) , disp_norm
+output_dim: 3 # disp_x,y,z | u,v (velocities in x and y directions), p pressure
+hidden_dim_node_encoder: 256
+hidden_dim_edge_encoder: 256
+hidden_dim_node_decoder: 256
+
+aggregation: "sum"
+batch_size: 1
+epochs: 50
+
+num_training_samples: 500
+num_validation_samples: 7
+num_test_samples: 7
+
+lr: 1e-4
+lr_decay_rate: 0.99985
+
+amp: False
+jit: False
+wandb_mode: "online"
+
+# just a template, these values r placeholders for sweep params
+main_loss:
+    MultiComponentLossWithUncertainty
+
+loss:
+    MSELoss
+
+normalization:
+    z_score

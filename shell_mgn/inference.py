@@ -24,7 +24,7 @@ from modulus.launch.utils import load_checkpoint
 from modulus.models.meshgraphnet import MeshGraphNet
 from omegaconf import DictConfig
 
-from utils import relative_lp_error, load_test_idx, create_vtk_from_graph
+from utils import mse, load_test_idx, create_vtk_from_graph
 
 try:
     from dgl.dataloading import GraphDataLoader
@@ -91,7 +91,7 @@ class MGNRollout:
             to_absolute_path(cfg.ckpt_path),
             models=self.model,
             device=self.device,
-            epoch=48,  #### change to load ckpt of choice, or None for loading latest saved
+            # epoch=48,  #### change to load ckpt of choice, or None for loading latest saved
         )
 
     def predict(self):
@@ -109,9 +109,9 @@ class MGNRollout:
         """
 
         self.pred, self.exact, self.faces, self.graphs = [], [], [], []
-        # stats = {
-        #     key: value.to(self.device) for key, value in self.dataset.node_stats.items()
-        # }
+        stats = {
+            key: value.to(self.device) for key, value in self.dataset.node_stats.items()
+        }
         for i, graph in enumerate(self.dataloader):
             graph = graph.to(self.device)
             pred = self.model(graph.ndata["x"], graph.edata["x"], graph).detach()
@@ -125,16 +125,16 @@ class MGNRollout:
                     pred_val = pred[:, key_index : key_index + 1]
                     target_val = graph.ndata["y"][:, key_index : key_index + 1]
 
-                    # pred_val = self.dataset.denormalize(
-                    #     pred_val, stats[f"{key}_mean"], stats[f"{key}_std"]
-                    # )
-                    # target_val = self.dataset.denormalize(
-                    #     target_val, stats[f"{key}_mean"], stats[f"{key}_std"]
-                    # )
+                    pred_val = self.dataset.z_score_denorm(
+                        pred_val, stats[f"{key}_mean"], stats[f"{key}_std"]
+                    )
+                    target_val = self.dataset.z_score_denorm(
+                        target_val, stats[f"{key}_mean"], stats[f"{key}_std"]
+                    )
 
-                    error = relative_lp_error(pred_val, target_val)
+                    error = mse(pred_val, target_val)
                     self.logger.info(
-                        f"Sample {i} - relative_lp_error error of {key} (%): {error:.3f}"
+                        f"Sample {i} - mse error of {key} (%): {error:.3f}"
                     )
 
                     polydata[f"pred_{key}"] = pred_val.detach().cpu().numpy()
@@ -146,7 +146,7 @@ class MGNRollout:
             )
 
 
-@hydra.main(version_base="1.3", config_path="conf", config_name="config")
+@hydra.main(version_base="1.3", config_path="conf", config_name="inference_conf.yaml")
 def main(cfg: DictConfig) -> None:
     logger = PythonLogger("main")  # General python logger
     logger.file_logging()

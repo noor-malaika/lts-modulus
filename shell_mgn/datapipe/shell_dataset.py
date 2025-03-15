@@ -64,7 +64,7 @@ class ShellDataset(DGLDataset):
         force_reload=False,
         name="dataset",
         verbose=False,
-        normalization=None,
+        normalization="z_score",
     ):
         """
         dataset_split: Hdf5Dataset object
