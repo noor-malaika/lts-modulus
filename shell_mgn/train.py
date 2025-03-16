@@ -38,7 +38,8 @@ from modulus.launch.logging import (
 )
 from modulus.launch.logging.wandb import initialize_wandb
 from modulus.launch.utils import load_checkpoint, save_checkpoint
-from modulus.models.meshgraphnet import MeshGraphNet
+# from modulus.models.meshgraphnet import MeshGraphNet
+from meshgraphnet import MeshGraphNet
 
 from utils import get_datapoint_idx, get_data_splits, save_test_idx
 import importlib
