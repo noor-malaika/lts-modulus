@@ -38,12 +38,33 @@ def get_datapoint_idx(data_path):
                 all_idx.append((variant, subcase))
     return all_idx
 
+def generate_uniform_splits_for_subcases(idx, tr_samples, val_samples, test_samples):
+    np.random.seed(42)
+    train_idx = []
+    val_idx = []
+    test_idx = []
+    subcases = np.unique(np.array(idx)[:,-1])
+    sub_dict = {}
+    for subcase in subcases:
+        sub_dict[subcase] = []
+        for dt_point in idx:
+            if dt_point[-1] == subcase:
+                sub_dict[subcase].append(dt_point)
 
-def get_data_splits(idx):
-    np.random.shuffle(idx)
-    train_idx = idx[: int(0.7 * (len(idx)))]
-    val_idx = idx[int(0.7 * (len(idx))) : int(0.85 * len(idx))]
-    test_idx = idx[int(0.85 * len(idx)) :]
+    for subcase, lst in sub_dict.items():
+        np.random.shuffle(lst)
+        train_idx.extend(lst[: tr_samples])
+        val_idx.extend(lst[tr_samples : tr_samples+val_samples])
+        test_idx.extend(lst[tr_samples+val_samples:tr_samples+val_samples+test_samples])
+    np.random.shuffle(train_idx)
+    np.random.shuffle(val_idx)
+    np.random.shuffle(test_idx)
+    return train_idx, val_idx, test_idx
+
+
+def get_data_splits(idx, tr_samples=500, val_samples=10, test_samples=10):
+
+    train_idx, val_idx, test_idx = generate_uniform_splits_for_subcases(idx, tr_samples, val_samples, test_samples)
     return train_idx, val_idx, test_idx
 
 
@@ -54,6 +75,7 @@ def save_test_idx(idx):
 def load_test_idx(file="test_idx.pt"):
     idx = torch.load(file)
     return idx
+
 
 def edges_to_triangles(edge_list):
     """
@@ -191,10 +213,8 @@ def combined_metric(pred, true, alpha=0.5):
     return alpha * rmse_value + (1 - alpha) * (1 - cos_sim_value)
 
 
-def relative_mae(pred, true, eps=1e-8):
-    return (
-        (torch.sum(torch.abs(pred - true)) / torch.sum(torch.abs(true) + eps)).item()
-    ) * 100
+def mae(pred, true):
+    return (torch.sum(torch.abs(pred - true)) / len(true))
 
 
 def mrae(preds, trues, eps=1e-8):

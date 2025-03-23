@@ -168,7 +168,25 @@ class MeshGraphNet(Module):
             recompute_activation=recompute_activation,
         )
 
-        self.node_decoder = MeshGraphMLP(
+        self.disp_x_decoder = MeshGraphMLP(
+            hidden_dim_processor,
+            output_dim=output_dim,
+            hidden_dim=hidden_dim_node_decoder,
+            hidden_layers=num_layers_node_decoder,
+            activation_fn=activation_fn,
+            norm_type=None,
+            recompute_activation=recompute_activation,
+        )
+        self.disp_y_decoder = MeshGraphMLP(
+            hidden_dim_processor,
+            output_dim=output_dim,
+            hidden_dim=hidden_dim_node_decoder,
+            hidden_layers=num_layers_node_decoder,
+            activation_fn=activation_fn,
+            norm_type=None,
+            recompute_activation=recompute_activation,
+        )
+        self.disp_z_decoder = MeshGraphMLP(
             hidden_dim_processor,
             output_dim=output_dim,
             hidden_dim=hidden_dim_node_decoder,
@@ -200,9 +218,13 @@ class MeshGraphNet(Module):
     ) -> Tensor:
         edge_features = self.edge_encoder(edge_features)
         node_features = self.node_encoder(node_features)
-        x = self.processor(node_features, edge_features, graph)
-        x = self.node_decoder(x)
-        return x
+        shared_head = self.processor(node_features, edge_features, graph)
+        disp_x = self.disp_x_decoder(shared_head)
+        disp_y = self.disp_y_decoder(shared_head)
+        disp_z = self.disp_z_decoder(shared_head)
+        return torch.stack(
+            [disp_x, disp_y, disp_z]
+        )
 
 
 class MeshGraphNetProcessor(nn.Module):

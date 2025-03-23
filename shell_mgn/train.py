@@ -66,7 +66,7 @@ class MGNTrainer:
 
         # splitting dataset
         all_idx = get_datapoint_idx(cfg.data_path)
-        train_idx, val_idx, test_idx = get_data_splits(all_idx)
+        train_idx, val_idx, test_idx = get_data_splits(all_idx, cfg.num_training_samples, cfg.num_validation_samples, cfg.num_test_samples)
 
         # saving test_idx for future testing
         save_test_idx(test_idx)
@@ -120,6 +120,8 @@ class MGNTrainer:
             hidden_dim_node_encoder=cfg.hidden_dim_node_encoder,
             hidden_dim_edge_encoder=cfg.hidden_dim_edge_encoder,
             hidden_dim_node_decoder=cfg.hidden_dim_node_decoder,
+            processor_size=7,
+            mlp_activation_fn='silu',
         )
         if cfg.jit:
             self.model = torch.jit.script(self.model).to(dist.device)
@@ -159,8 +161,8 @@ class MGNTrainer:
             self.optimizer = torch.optim.Adam(
                 loss_params + list(self.model.parameters()), lr=cfg.lr
             )
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer, lr_lambda=lambda epoch: cfg.lr_decay_rate**epoch
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer, T_0=100, T_mult=1, eta_min=0.01
         )
         self.scaler = GradScaler()
 
@@ -255,7 +257,7 @@ class MGNTrainer:
         )
 
 
-@hydra.main(version_base="1.3", config_path="conf/multi_comp", config_name="config")
+@hydra.main(version_base="1.3", config_path="conf/single_run_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     if not cfg.main_loss:
         main_loss_fn = cfg["loss"]
@@ -274,10 +276,10 @@ def main(cfg: DictConfig) -> None:
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     # initialize loggers
     initialize_wandb(
-        project="shell_mgn_sweep_v2",
+        project="shell_mgn_multi_head_without_gradnorm",
         entity="malaikanoor7864-mnsuam",
         name=run_name,
-        group="Shell-Sweep-V2",
+        group="Watch-Gradients",
         mode=cfg.wandb_mode,
         config=cfg_dict,
     )
