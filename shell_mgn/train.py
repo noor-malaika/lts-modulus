@@ -120,7 +120,7 @@ class MGNTrainer:
             hidden_dim_node_encoder=cfg.hidden_dim_node_encoder,
             hidden_dim_edge_encoder=cfg.hidden_dim_edge_encoder,
             hidden_dim_node_decoder=cfg.hidden_dim_node_decoder,
-            processor_size=7,
+            processor_size=4,
             mlp_activation_fn='silu',
         )
         if cfg.jit:
@@ -177,7 +177,7 @@ class MGNTrainer:
             scaler=self.scaler,
             device=dist.device,
         )
-        self.metrics = ["mse", "rmse", "relative_rmse", "combined_metric"]
+        self.metrics = ["mse", "rmse", "mae"]
 
     def train(self, graph):
         graph = graph.to(self.dist.device)
