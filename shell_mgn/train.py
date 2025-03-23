@@ -53,9 +53,9 @@ loss_mapping = {
     "LogCoshLoss": "custom_loss",
     "MRAELoss": "custom_loss",
     "HuberLoss": "torch.nn",
-    "MultiComponentLossWithUncertainty": "custom_loss"
+    "MultiComponentLossWithUncertainty": "custom_loss",
+    "L1Loss": "torch.nn",
 }
-
 
 class MGNTrainer:
     def __init__(self, cfg: DictConfig, dist, rank_zero_logger, main_loss_fn, main_loss_module):

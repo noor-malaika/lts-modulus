@@ -1,13 +1,13 @@
 hydra:
     run:
-        dir: ./shell_mgn/testing/multi_head_without_gradnorm/outputs
+        dir: ./shell_mgn/testing/multi_head_without_gradnorm/MAE/outputs
     job:
         chdir: True
 
-ckpt_path: ./shell_mgn/testing/multi_head_without_gradnorm/checkpoints
+ckpt_path: ./shell_mgn/testing/multi_head_without_gradnorm/MAE/checkpoints
 ckpt_name: ./shell.pt
 data_path: /home/sces213/Malaika/lts_modulus/shell_mgn/dataset/dataset.hdf5 # -> path to hdf5
-results_dir: ./shell_mgn/testing/multi_head_without_gradnorm/results
+results_dir: ./shell_mgn/testing/multi_head_without_gradnorm/MAE/results
 
 input_dim_nodes: 11 # 3d pos, 1d ntype, 1d thickness, 3d spc 3d force | ndata -> pos(2d) ,markers 5 ; not sure
 input_dim_edges: 5 # 3d disp, 1d norm, 1d etypes | edata -> disp_vector(2d) , disp_norm
@@ -33,8 +33,9 @@ wandb_mode: "online"
 ## seeing if it could serve as a template
 ## loss and normalization is accessed as in sweep.yaml, can't remove from here that says not defined in config
 
+
 loss:
-    MSELoss
+    L1Loss
 
 normalization:
     z_score
