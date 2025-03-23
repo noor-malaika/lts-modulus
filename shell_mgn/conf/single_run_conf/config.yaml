@@ -28,7 +28,7 @@ lr: 0.1
 
 amp: False
 jit: False
-wandb_mode: "online"
+wandb_mode: "disabled"
 
 ## seeing if it could serve as a template
 ## loss and normalization is accessed as in sweep.yaml, can't remove from here that says not defined in config

@@ -259,11 +259,11 @@ class MGNTrainer:
 
 @hydra.main(version_base="1.3", config_path="conf/single_run_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    if not cfg.main_loss:
+    try:
         main_loss_fn = cfg["loss"]
         main_loss_module = loss_mapping[main_loss_fn]
         run_name = f"loss_{main_loss_fn}_norm_{cfg.normalization}"
-    else:
+    except:
         main_loss_fn = cfg["main_loss"]
         main_loss_module = loss_mapping[main_loss_fn]
         run_name = f"main_loss_{main_loss_fn}_loss_{cfg.loss}"
@@ -289,6 +289,7 @@ def main(cfg: DictConfig) -> None:
     rank_zero_logger.file_logging()
     torch.cuda.empty_cache()
     trainer = MGNTrainer(cfg, dist, rank_zero_logger, main_loss_fn, main_loss_module)
+    wandb.watch(trainer.model, log='all', log_freq=10)
     start = time.time()
     rank_zero_logger.info("Training started...")
 
