@@ -1,29 +1,9 @@
-# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
-# SPDX-FileCopyrightText: All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-import os
-import time
-import hydra
 import torch
-import wandb
-from dgl.dataloading import GraphDataLoader
-from hydra.utils import to_absolute_path
+import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
+from dgl.nn.pytorch.conv import GraphConv
 
 try:
     import apex
@@ -36,7 +16,16 @@ from modulus.launch.logging import (
     PythonLogger,
     RankZeroLoggingWrapper,
 )
+import os
+import time
+import hydra
+import torch
+import wandb
+from dgl.dataloading import GraphDataLoader
+from hydra.utils import to_absolute_path
+
 from modulus.launch.logging.wandb import initialize_wandb
+
 from modulus.launch.utils import load_checkpoint, save_checkpoint
 # from modulus.models.meshgraphnet import MeshGraphNet
 from meshgraphnet import MeshGraphNet
@@ -56,6 +45,73 @@ loss_mapping = {
     "MultiComponentLossWithUncertainty": "custom_loss",
     "L1Loss": "torch.nn",
 }
+
+class StableGraphNetWithEdges(nn.Module):
+    def __init__(
+        self,
+        input_dim_nodes,
+        input_dim_edges,
+        output_dim=3,  # dx, dy, dz
+        hidden_dim=128,
+        processor_size=4,
+        mlp_activation_fn="silu",
+    ):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        act_fn = {"relu": nn.ReLU, "gelu": nn.GELU, "silu": nn.SiLU}[mlp_activation_fn]
+
+        # Node encoder
+        self.node_encoder = nn.Sequential(
+            nn.Linear(input_dim_nodes, hidden_dim),
+            act_fn(),
+            nn.LayerNorm(hidden_dim),
+        )
+
+        # Edge encoder
+        self.edge_encoder = nn.Sequential(
+            nn.Linear(input_dim_edges, hidden_dim),
+            act_fn(),
+            nn.LayerNorm(hidden_dim),
+        )
+
+        # GNN processor (now uses edge features)
+        self.processor = nn.ModuleList()
+        for _ in range(processor_size):
+            self.processor.append(
+                GraphConv(hidden_dim, hidden_dim, activation=act_fn())
+            )
+
+        # Decoders (dx, dy, dz)
+        self.decoder = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            act_fn(),
+            nn.Linear(hidden_dim, output_dim),
+        )
+
+    def forward(self, g, node_feats, edge_feats):
+        # Encode nodes and edges
+        h_nodes = self.node_encoder(node_feats)
+        h_edges = self.edge_encoder(edge_feats)
+
+        # Update edge features (optional: project to same dim)
+        g.edata["he"] = h_edges
+
+        # Message passing with edge features
+        for conv in self.processor:
+            h_nodes_new = conv(g, h_nodes)
+            h_nodes = h_nodes + h_nodes_new  # Residual connection
+
+        # Decode to [dx, dy, dz]
+        return self.decoder(h_nodes)
+
+    def monitor_gradients(self):
+        """Utility to check gradient flow."""
+        grads = {}
+        for name, param in self.named_parameters():
+            if param.grad is not None:
+                grads[name] = param.grad.abs().mean().item()
+        return grads
+
 
 class MGNTrainer:
     def __init__(self, cfg: DictConfig, dist, rank_zero_logger, main_loss_fn, main_loss_module):
@@ -112,16 +168,12 @@ class MGNTrainer:
         )
 
         # instantiate the model
-        self.model = MeshGraphNet(
-            cfg.input_dim_nodes,
-            cfg.input_dim_edges,
-            cfg.output_dim,
-            aggregation=cfg.aggregation,
-            hidden_dim_node_encoder=cfg.hidden_dim_node_encoder,
-            hidden_dim_edge_encoder=cfg.hidden_dim_edge_encoder,
-            hidden_dim_node_decoder=cfg.hidden_dim_node_decoder,
+        self.model = StableGraphNetWithEdges(
+            input_dim_nodes=cfg.input_dim_nodes,
+            input_dim_edges=cfg.input_dim_edges,
+            output_dim=cfg.output_dim,
             processor_size=4,
-            mlp_activation_fn='relu',
+            mlp_activation_fn='silu',
         )
         if cfg.jit:
             self.model = torch.jit.script(self.model).to(dist.device)
@@ -178,6 +230,7 @@ class MGNTrainer:
             device=dist.device,
         )
         self.metrics = ["mse", "rmse", "mae"]
+        self.logger =  rank_zero_logger
 
     def train(self, graph):
         graph = graph.to(self.dist.device)
@@ -190,7 +243,7 @@ class MGNTrainer:
     def forward(self, graph):
         # forward pass
         with autocast(enabled=self.amp):
-            pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
+            pred = self.model(graph, graph.ndata["x"], graph.edata["x"])
             loss = self.criterion(pred, graph.ndata["y"])
             return loss
 
@@ -202,7 +255,9 @@ class MGNTrainer:
             self.scaler.update()
         else:
             loss.backward()
+            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
+        self.logger.info(self.model.monitor_gradients())
         lr = self.get_lr()
         wandb.log({"lr": lr})
 
@@ -217,7 +272,7 @@ class MGNTrainer:
         error_fn = getattr(utils, metric)
         for i, graph in enumerate(self.validation_dataloader):
             graph = graph.to(self.dist.device)
-            pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
+            pred = self.model(graph, graph.ndata["x"], graph.edata["x"])
 
             for index, key in enumerate(error_keys):
                 pred_val = pred[:, index : index + 1]
