@@ -120,8 +120,6 @@ class MGNTrainer:
             hidden_dim_node_encoder=cfg.hidden_dim_node_encoder,
             hidden_dim_edge_encoder=cfg.hidden_dim_edge_encoder,
             hidden_dim_node_decoder=cfg.hidden_dim_node_decoder,
-            processor_size=4,
-            mlp_activation_fn='relu',
         )
         if cfg.jit:
             self.model = torch.jit.script(self.model).to(dist.device)
@@ -177,7 +175,7 @@ class MGNTrainer:
             scaler=self.scaler,
             device=dist.device,
         )
-        self.metrics = ["mse", "rmse", "mae"]
+        self.metrics = ["mse", "rmse", "mae", "mare"]
 
     def train(self, graph):
         graph = graph.to(self.dist.device)
@@ -239,6 +237,17 @@ class MGNTrainer:
                         target_val,
                         self.validation_dataset.node_stats[f"{key}_mean"],
                         self.validation_dataset.node_stats[f"{key}_std"],
+                    )
+                elif self.normalization == "min-max":
+                    pred_val = self.validation_dataset.min_max_denorm(
+                        pred_val,
+                        self.validation_dataset.node_stats[f"{key}_min"],
+                        self.validation_dataset.node_stats[f"{key}_max"],
+                    )
+                    target_val = self.validation_dataset.min_max_denorm(
+                        target_val,
+                        self.validation_dataset.node_stats[f"{key}_min"],
+                        self.validation_dataset.node_stats[f"{key}_max"],
                     )
                 errors[key] += error_fn(pred_val, target_val)
 

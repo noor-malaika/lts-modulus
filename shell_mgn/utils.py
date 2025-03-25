@@ -51,7 +51,8 @@ def generate_uniform_splits_for_subcases(idx, tr_samples, val_samples, test_samp
             if dt_point[-1] == subcase:
                 sub_dict[subcase].append(dt_point)
 
-    for subcase, lst in sub_dict.items():
+    for subcase, lst in list(sub_dict.items())[:1]:
+        print(f"Selecting subcase: {subcase}")
         np.random.shuffle(lst)
         train_idx.extend(lst[: tr_samples])
         val_idx.extend(lst[tr_samples : tr_samples+val_samples])
@@ -214,12 +215,11 @@ def combined_metric(pred, true, alpha=0.5):
 
 
 def mae(pred, true):
-    return (torch.sum(torch.abs(pred - true)) / len(true))
+    return torch.mean(torch.abs(pred - true))
 
 
-def mrae(preds, trues, eps=1e-8):
-    relative_errors = torch.abs(preds - trues) / (torch.abs(trues) + eps)
-    return 100 * torch.mean(relative_errors)
+def mare(pred, target, eps=1e-8):
+    return torch.mean(torch.abs((pred - target) / (target + eps)))
 
 
 def log_cosh(pred, true):

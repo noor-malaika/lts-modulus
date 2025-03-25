@@ -100,8 +100,8 @@ class ShellDataset(DGLDataset):
 
         if normalization == "z_score":
             if split == "train":
-                self.node_stats = self._get_node_stats(keys=self.normalize_keys)
-                self.edge_stats = self._get_edge_stats()
+                self.node_stats = self._get_node_stats_for_zscore(keys=self.normalize_keys)
+                self.edge_stats = self._get_edge_stats_for_zscore()
             else:
                 self.node_stats = load_json("node_stats.json")
                 self.edge_stats = load_json("edge_stats.json")
@@ -113,6 +113,34 @@ class ShellDataset(DGLDataset):
         elif normalization == "max_abs":
             self.graphs = self.max_abs_norm()
 
+        elif normalization == "custom":
+            if split == "train":
+                self.edge_stats = self._get_edge_stats_for_zscore()
+                self.node_stats = self._get_node_stats_for_robust_scaler(normalize_keys[:3]) # displaccements here
+                self.node_stats |= self._get_node_stats_minmax(normalize_keys[3:]) # thickness and load here
+            else:
+                self.edge_stats = load_json("edge_stats.json")
+                self.node_stats = load_json("node_stats_robust_scaler.json")
+                self.node_stats |= load_json("node_stats_minmax.json") # works like .update() for dicts
+            
+            self.graphs = self.min_max_norm_node()
+            self.graphs = self.robust_scaler_node_disp()
+            self.graphs = self.z_score_norm_edge()
+
+        elif normalization == "min-max":
+            if split == "train":
+                self.edge_stats = self._get_edge_stats_for_zscore()
+                self.node_stats = self._get_node_stats_minmax(normalize_keys)
+            else:
+                self.edge_stats = load_json("edge_stats.json")
+                self.node_stats = load_json("node_stats_minmax.json")
+
+            self.graphs = self.min_max_norm_node()
+            self.graphs = self.z_score_norm_edge()
+
+        # Concat normalized features
+        self._concat_features()
+
     def __getitem__(self, idx):
         graph = self.graphs[idx]
         return graph
@@ -120,15 +148,8 @@ class ShellDataset(DGLDataset):
     def __len__(self):
         return self.length
 
-    def max_abs_norm(self):
+    def _concat_features(self):
         for i in range(len(self.graphs)):
-            self.graphs[i].ndata["max_abs"] = {}
-            for key in self.normalize_keys:
-                # Apply Max-Abs normalization to each node feature
-                max_abs = torch.max(torch.abs(self.graphs[i].ndata[key]))
-                self.graphs[i].ndata["max_abs"][key] = max_abs
-                self.graphs[i].ndata[key] = self.graphs[i].ndata[key] / max_abs
-
             # Concatenate input features into "x"
             self.graphs[i].ndata["x"] = torch.cat(
                 [
@@ -155,14 +176,24 @@ class ShellDataset(DGLDataset):
                 dim=-1,
             )
 
+            # Concat edge features
+            self.graphs[i].edata["x"] = torch.cat(
+                (self.graphs[i].edata["x"], self.etypes[i].view(-1, 1)), dim=-1
+            )
+
+    def max_abs_norm(self):
+        for i in range(len(self.graphs)):
+            self.graphs[i].ndata["max_abs"] = {}
+            for key in self.normalize_keys:
+                # Apply Max-Abs normalization to each node feature
+                max_abs = torch.max(torch.abs(self.graphs[i].ndata[key]))
+                self.graphs[i].ndata["max_abs"][key] = max_abs
+                self.graphs[i].ndata[key] = self.graphs[i].ndata[key] / max_abs
+
             # Apply Max-Abs normalization to edge features
             max_abs_edge = torch.max(torch.abs(self.graphs[i].edata["x"]))
             self.graphs[i].edata["x"] = self.graphs[i].edata["x"] / max_abs_edge
 
-            # Concatenate edge types (if applicable)
-            self.graphs[i].edata["x"] = torch.cat(
-                (self.graphs[i].edata["x"], self.etypes[i].view(-1, 1)), dim=-1
-            )
         return self.graphs
 
     def max_abs_denorm(self, data, max_abs):
@@ -178,35 +209,12 @@ class ShellDataset(DGLDataset):
         )
         epsilon = torch.tensor(1e-8, dtype=torch.float32)
 
-        for i in range(len(self.graphs)):
-            for key in invar_keys:
+        for key in invar_keys:
+            for i in range(len(self.graphs)):
                 self.graphs[i].ndata[key] = (
                     self.graphs[i].ndata[key] - self.node_stats[key + "_mean"]
                 ) / (self.node_stats[key + "_std"] + epsilon)
 
-            self.graphs[i].ndata["x"] = torch.cat(
-                [
-                    (
-                        self.graphs[i].ndata[key].view(-1, 1)
-                        if self.graphs[i].ndata[key].dim() == 1
-                        else self.graphs[i].ndata[key]
-                    )
-                    for key in self.input_keys
-                ],
-                dim=-1,
-            )
-
-            self.graphs[i].ndata["y"] = torch.cat(
-                [
-                    (
-                        self.graphs[i].ndata[key].view(-1, 1)
-                        if self.graphs[i].ndata[key].dim() == 1
-                        else self.graphs[i].ndata[key]
-                    )
-                    for key in self.output_keys
-                ],
-                dim=-1,
-            )
         return self.graphs
 
     def z_score_norm_edge(self):
@@ -216,10 +224,6 @@ class ShellDataset(DGLDataset):
                 self.graphs[i].edata["x"] - self.edge_stats["edge_mean"]
             ) / self.edge_stats["edge_std"]
 
-            self.graphs[i].edata["x"] = torch.cat(
-                (self.graphs[i].edata["x"], self.etypes[i].view(-1, 1)), dim=-1
-            )
-
         return self.graphs
 
     @staticmethod
@@ -227,8 +231,96 @@ class ShellDataset(DGLDataset):
         """denormalizes a tensor"""
         denormalized_invar = invar * std + mu
         return denormalized_invar
+    
+    def _get_node_stats_minmax(self, keys):
+        stats = {}
 
-    def _get_edge_stats(self):
+        for key in keys:
+            stats[key + "_min"] = 0
+            stats[key + "_max"] = 0
+            node_values = []
+
+            for i in range(self.length):
+                node_values.append(self.graphs[i].ndata[key])
+
+            node_tensor = torch.cat(node_values, dim=0)
+            stats[key + "_min"] = torch.min(node_tensor, dim=0).values
+            stats[key + "_max"] = torch.max(node_tensor, dim=0).values
+
+        # save to file
+        save_json(stats, "node_stats_minmax.json")
+        return stats
+    
+    def min_max_norm_node(self, feature_range=(0,1), epsilon=1e-8):
+        """Applies Min-Max Normalization to node features"""
+        a, b = feature_range
+        for key in self.node_stats.keys():
+            if not key.endswith("_min") and not key.endswith("_max"):
+                continue  # Skip non-relevant keys
+            
+            key_base = key.replace("_min", "").replace("_max", "")
+            min_val = self.node_stats[key_base + "_min"]
+            max_val = self.node_stats[key_base + "_max"]
+
+            for i in range(len(self.graphs)):
+                self.graphs[i].ndata[key_base] = a + \
+                ((self.graphs[i].ndata[key_base] - min_val)  / (max_val - min_val + epsilon)) \
+                * (b - a)
+
+        return self.graphs
+    
+    @staticmethod
+    def min_max_denorm(data_arr, old_min,  old_max, feature_range=(0,1), epsilon=1e-8):
+        new_min,new_max = feature_range
+        denormalized = old_min + (old_max - old_min) * ((data_arr - new_min) / (new_max - new_min + epsilon))
+        return denormalized
+
+    def _get_node_stats_for_robust_scaler(self, keys):
+        stats = {}
+
+        for key in keys:
+            stats[key + "_median"] = 0
+            stats[key + "_iqr"] = 0
+            node_values = []
+
+            for i in range(self.length):
+                node_values.append(self.graphs[i].ndata[key])
+
+            node_tensor = torch.cat(node_values, dim=0)
+            stats[key + "_median"] = torch.median(node_tensor, dim=0).values
+            q1 = torch.quantile(node_tensor, 0.25, dim=0)
+            q3 = torch.quantile(node_tensor, 0.75, dim=0)
+            stats[key + "_iqr"] = q3 - q1
+
+        # save to file
+        save_json(stats, "node_stats_robust_scaler.json")
+        return stats
+    
+    def robust_scaler_node_disp(self):
+        """Applies RobustScaler to node features"""
+        invar_keys = set(
+            [
+                key.replace("_median", "").replace("_iqr", "")
+                for key in self.node_stats.keys()
+                if key.endswith('_median') or key.endswith('_iqr')
+            ]
+        )
+
+        for key in invar_keys:
+            for i in range(len(self.graphs)):
+                self.graphs[i].ndata[key] = (
+                    self.graphs[i].ndata[key] - self.node_stats[key + "_median"]
+                ) / (self.node_stats[key + "_iqr"])
+
+        return self.graphs
+
+    @staticmethod
+    def robust_scaler_denorm(invar, median, iqr):
+        """Denormalizes a tensor using RobustScaler"""
+        denormalized_invar = invar * iqr + median
+        return denormalized_invar
+
+    def _get_edge_stats_for_zscore(self):
         stats = {
             "edge_mean": 0,
             "edge_meansqr": 0,
@@ -249,7 +341,7 @@ class ShellDataset(DGLDataset):
         save_json(stats, "edge_stats.json")
         return stats
 
-    def _get_node_stats(self, keys):
+    def _get_node_stats_for_zscore(self, keys):
         stats = {}
         for key in keys:
             stats[key + "_mean"] = 0
