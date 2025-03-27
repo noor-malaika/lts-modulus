@@ -254,21 +254,17 @@ class ShellDataset(DGLDataset):
     def min_max_norm_node(self, feature_range=(0,1), epsilon=1e-8):
         """Applies Min-Max Normalization to node features"""
         a, b = feature_range
-        for key in self.node_stats.keys():
-            if not key.endswith("_min") and not key.endswith("_max"):
-                continue  # Skip non-relevant keys
-            
-            key_base = key.replace("_min", "").replace("_max", "")
-            min_val = self.node_stats[key_base + "_min"]
-            max_val = self.node_stats[key_base + "_max"]
+        for key in self.normalize_keys:
+            min_val = self.node_stats[key + "_min"]
+            max_val = self.node_stats[key + "_max"]
 
             for i in range(len(self.graphs)):
-                self.graphs[i].ndata[key_base] = a + \
-                ((self.graphs[i].ndata[key_base] - min_val)  / (max_val - min_val + epsilon)) \
+                self.graphs[i].ndata[key] = a + \
+                ((self.graphs[i].ndata[key] - min_val)  / (max_val - min_val + epsilon)) \
                 * (b - a)
 
         return self.graphs
-    
+
     @staticmethod
     def min_max_denorm(data_arr, old_min,  old_max, feature_range=(0,1), epsilon=1e-8):
         new_min,new_max = feature_range

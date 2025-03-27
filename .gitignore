@@ -6,6 +6,7 @@ outputs*
 cuda*
 dataset*
 lts_venv*
+lts_env*
 modulus*
 stokes_mgn/results
 stokes_mgn/__pycache__

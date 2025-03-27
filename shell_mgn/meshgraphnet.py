@@ -219,12 +219,9 @@ class MeshGraphNet(Module):
         edge_features = self.edge_encoder(edge_features)
         node_features = self.node_encoder(node_features)
         shared_head = self.processor(node_features, edge_features, graph)
-        # disp_x = torch.squeeze(self.disp_x_decoder(shared_head))
-        # disp_y = torch.squeeze(self.disp_y_decoder(shared_head))
-        # disp_z = torch.squeeze(self.disp_z_decoder(shared_head))
-        disp_x = nn.Tanh(torch.squeeze(self.disp_x_decoder(shared_head)))
-        disp_y = nn.Tanh(torch.squeeze(self.disp_y_decoder(shared_head)))
-        disp_z = nn.Tanh(torch.squeeze(self.disp_z_decoder(shared_head)))
+        disp_x = torch.squeeze(self.disp_x_decoder(shared_head))
+        disp_y = torch.squeeze(self.disp_y_decoder(shared_head))
+        disp_z = torch.squeeze(self.disp_z_decoder(shared_head))
         return torch.stack(
             [disp_x, disp_y, disp_z], dim=-1
         )

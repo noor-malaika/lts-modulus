@@ -21,7 +21,7 @@ import torch
 from hydra.utils import to_absolute_path
 from modulus.launch.logging import PythonLogger
 from modulus.launch.utils import load_checkpoint
-from modulus.models.meshgraphnet import MeshGraphNet
+from meshgraphnet import MeshGraphNet
 from omegaconf import DictConfig
 
 from utils import mse, load_test_idx, create_vtk_from_graph
@@ -57,10 +57,11 @@ class MGNRollout:
 
         test_hdf5 = Hdf5Dataset(cfg.data_path, test_idx, len(test_idx))
         self.dataset = ShellDataset(
-            name="stokes_test",
+            name="shell_test",
             dataset_split=test_hdf5,
             split="test",
             num_samples=cfg.num_test_samples,
+            normalization=cfg.normalization,
         )
 
         # instantiate dataloader
@@ -77,9 +78,9 @@ class MGNRollout:
             cfg.input_dim_edges,
             cfg.output_dim,
             aggregation=cfg.aggregation,
-            hidden_dim_node_encoder=256,
-            hidden_dim_edge_encoder=256,
-            hidden_dim_node_decoder=256,
+            hidden_dim_node_encoder=cfg.hidden_dim_node_encoder,
+            hidden_dim_edge_encoder=cfg.hidden_dim_edge_encoder,
+            hidden_dim_node_decoder=cfg.hidden_dim_node_decoder,
         )
         self.model = self.model.to(self.device)
 
@@ -108,7 +109,7 @@ class MGNRollout:
         None
         """
 
-        self.pred, self.exact, self.faces, self.graphs = [], [], [], []
+        self.pred, self.graphs = [], []
         stats = {
             key: value.to(self.device) for key, value in self.dataset.node_stats.items()
         }
@@ -125,11 +126,11 @@ class MGNRollout:
                     pred_val = pred[:, key_index : key_index + 1]
                     target_val = graph.ndata["y"][:, key_index : key_index + 1]
 
-                    pred_val = self.dataset.z_score_denorm(
-                        pred_val, stats[f"{key}_mean"], stats[f"{key}_std"]
+                    pred_val = self.dataset.min_max_denorm(
+                        pred_val, stats[f"{key}_min"], stats[f"{key}_max"]
                     )
-                    target_val = self.dataset.z_score_denorm(
-                        target_val, stats[f"{key}_mean"], stats[f"{key}_std"]
+                    target_val = self.dataset.min_max_denorm(
+                        target_val, stats[f"{key}_min"], stats[f"{key}_max"]
                     )
 
                     error = mse(pred_val, target_val)
@@ -146,7 +147,7 @@ class MGNRollout:
             )
 
 
-@hydra.main(version_base="1.3", config_path="conf", config_name="inference_conf.yaml")
+@hydra.main(version_base="1.3", config_path="conf/single_run_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     logger = PythonLogger("main")  # General python logger
     logger.file_logging()

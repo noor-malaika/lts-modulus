@@ -1,30 +1,30 @@
 hydra:
     run:
-        dir: ./shell_mgn/testing/multi_head_without_gradnorm/single-subcase-min-max-tanh/outputs
+        dir: ./shell_mgn/mysys_testing/multi_head_without_gradnorm/805_relu_l1loss_min_max_0_1/outputs
     job:
         chdir: True
 
-ckpt_path: ./shell_mgn/testing/multi_head_without_gradnorm/single-subcase-min-max-tanh/checkpoints
+ckpt_path: ./shell_mgn/mysys_testing/multi_head_without_gradnorm/805_relu_l1loss_min_max_0_1/checkpoints
 ckpt_name: ./shell.pt
-data_path: /home/sces213/Malaika/lts_modulus/shell_mgn/dataset/dataset.hdf5 # -> path to hdf5
-results_dir: ./shell_mgn/testing/multi_head_without_gradnorm/single-subcase-min-max-tanh/results
+data_path: /home/sces55/Malaika/fyp/lts_modulus/shell_mgn/dataset/dataset.hdf5 # -> path to hdf5
+results_dir: ./shell_mgn/mysys_testing/multi_head_without_gradnorm/805_relu_l1loss_min_max_0_1/results
 
 input_dim_nodes: 11 # 3d pos, 1d ntype, 1d thickness, 3d spc 3d force | ndata -> pos(2d) ,markers 5 ; not sure
 input_dim_edges: 5 # 3d disp, 1d norm, 1d etypes | edata -> disp_vector(2d) , disp_norm
 output_dim: 1 # disp_x,y,z | u,v (velocities in x and y directions), p pressure
-hidden_dim_node_encoder: 128
-hidden_dim_edge_encoder: 128
-hidden_dim_node_decoder: 128
+hidden_dim_node_encoder: 256
+hidden_dim_edge_encoder: 256
+hidden_dim_node_decoder: 256
 
 aggregation: "sum"
 batch_size: 1
-epochs: 100
+epochs: 50
 
 num_training_samples: 500
 num_validation_samples: 10
 num_test_samples: 10
 
-lr: 1e-4
+lr: 1e-3
 
 amp: False
 jit: False

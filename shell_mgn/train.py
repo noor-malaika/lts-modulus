@@ -120,6 +120,7 @@ class MGNTrainer:
             hidden_dim_node_encoder=cfg.hidden_dim_node_encoder,
             hidden_dim_edge_encoder=cfg.hidden_dim_edge_encoder,
             hidden_dim_node_decoder=cfg.hidden_dim_node_decoder,
+            mlp_activation_fn="relu",
         )
         if cfg.jit:
             self.model = torch.jit.script(self.model).to(dist.device)
@@ -160,7 +161,7 @@ class MGNTrainer:
                 loss_params + list(self.model.parameters()), lr=cfg.lr
             )
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            self.optimizer, T_0=100, T_mult=1, eta_min=0.01
+            self.optimizer, T_0=100, T_mult=1, eta_min=1e-4
         )
         self.scaler = GradScaler()
 
@@ -249,6 +250,8 @@ class MGNTrainer:
                         self.validation_dataset.node_stats[f"{key}_min"],
                         self.validation_dataset.node_stats[f"{key}_max"],
                     )
+                print("Prediction range:", pred_val.min(), pred_val.max())
+                print("Target range:", target_val.min(), target_val.max())
                 errors[key] += error_fn(pred_val, target_val)
 
         for key in error_keys:
@@ -269,13 +272,14 @@ class MGNTrainer:
 @hydra.main(version_base="1.3", config_path="conf/single_run_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     try:
-        main_loss_fn = cfg["loss"]
-        main_loss_module = loss_mapping[main_loss_fn]
-        run_name = f"loss_{main_loss_fn}_norm_{cfg.normalization}"
-    except:
         main_loss_fn = cfg["main_loss"]
         main_loss_module = loss_mapping[main_loss_fn]
         run_name = f"main_loss_{main_loss_fn}_loss_{cfg.loss}"
+    except:
+        main_loss_fn = cfg["loss"]
+        main_loss_module = loss_mapping[main_loss_fn]
+        run_name = f"805_relu_l1loss_min_max_0_1_loss_{main_loss_fn}_norm_{cfg.normalization}"
+    
     
     # initialize distributed manager
     DistributedManager.initialize()
@@ -285,10 +289,10 @@ def main(cfg: DictConfig) -> None:
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     # initialize loggers
     initialize_wandb(
-        project="shell_mgn_multi_head_without_gradnorm",
+        project="shell_mgn_multi_head_805",
         entity="malaikanoor7864-mnsuam",
         name=run_name,
-        group="Watch-Gradients",
+        group="Test_run",
         mode=cfg.wandb_mode,
         config=cfg_dict,
     )
