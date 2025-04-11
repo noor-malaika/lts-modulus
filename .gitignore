@@ -17,4 +17,5 @@ shell_mgn/checkpoints
 shell_mgn/__pycache__
 *.out
 shell_mgn/sweep
+shell_mgn/mysys*
 wandb

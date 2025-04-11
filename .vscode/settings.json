@@ -2,5 +2,6 @@
     "debugpy.debugJustMyCode": false,
     "search.useParentIgnoreFiles": false,
     "search.useGlobalIgnoreFiles": true,
-    "python.languageServer": "Pylance"
+    "python.languageServer": "Pylance",
+    "git.ignoreLimitWarning": true
 }
