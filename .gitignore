@@ -19,3 +19,6 @@ shell_mgn/__pycache__
 shell_mgn/sweep
 shell_mgn/mysys*
 wandb
+stokes_mgn_vtp_inp
+.hydra
+.vscode

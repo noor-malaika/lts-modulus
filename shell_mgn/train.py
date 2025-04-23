@@ -153,7 +153,7 @@ class MGNTrainer:
                 self.model.parameters(), lr=cfg.lr
             )
             rank_zero_logger.info("Using FusedAdam optimizer")
-        except Exception:  ##### continue from here
+        except Exception:
             loss_params = (
                 list(self.criterion.parameters()) if self.criterion.parameters() else []
             )

@@ -1,7 +1,0 @@
-{
-    "debugpy.debugJustMyCode": false,
-    "search.useParentIgnoreFiles": false,
-    "search.useGlobalIgnoreFiles": true,
-    "python.languageServer": "Pylance",
-    "git.ignoreLimitWarning": true
-}
