@@ -1,7 +1,7 @@
-program: /home/sces213/Malaika/lts_modulus/shell_mgn/train.py
+program: ./src/shellmgn/main.py
 name: sweep_v2
 method: random
-project: shell_mgn_sweep_v2
+project: shellmgn_sweep_v2
 entity: malaikanoor7864-mnsuam
 parameters:
   loss:

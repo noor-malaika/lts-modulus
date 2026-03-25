@@ -1,19 +1,3 @@
-# SPDX-FileCopyrightText: Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES.
-# SPDX-FileCopyrightText: All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 
 import hydra
@@ -21,10 +5,11 @@ import torch
 from hydra.utils import to_absolute_path
 from modulus.launch.logging import PythonLogger
 from modulus.launch.utils import load_checkpoint
-from meshgraphnet import MeshGraphNet
 from omegaconf import DictConfig
+from shellmgn.dataloader.dataloader import Hdf5Dataset, ShellDataset
+from shellmgn.models.meshgraphnet import MeshGraphNet
+from shellmgn.utils import create_vtk_from_graph, load_test_idx, mse
 
-from utils import mse, load_test_idx, create_vtk_from_graph
 
 try:
     from dgl.dataloading import GraphDataLoader
@@ -33,16 +18,6 @@ except Exception:
         "Stokes  example requires the DGL library. Install the "
         + "desired CUDA version at: \n https://www.dgl.ai/pages/start.html"
     )
-
-try:
-    pass
-except Exception:
-    raise ImportError(
-        "Stokes  Dataset requires the pyvista library. Install with "
-        + "pip install pyvista"
-    )
-from datapipe.shell_dataset import Hdf5Dataset, ShellDataset
-
 
 class MGNRollout:
     def __init__(self, cfg: DictConfig, logger):
@@ -53,7 +28,7 @@ class MGNRollout:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using {self.device} device")
 
-        test_idx = load_test_idx()
+        test_idx = load_test_idx(cfg.test_idx)
 
         test_hdf5 = Hdf5Dataset(cfg.data_path, test_idx, len(test_idx))
         self.dataset = ShellDataset(
@@ -147,7 +122,7 @@ class MGNRollout:
             )
 
 
-@hydra.main(version_base="1.3", config_path="conf/single_run_conf", config_name="config")
+@hydra.main(version_base="1.3", config_path="../conf/single_run_conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     logger = PythonLogger("main")  # General python logger
     logger.file_logging()

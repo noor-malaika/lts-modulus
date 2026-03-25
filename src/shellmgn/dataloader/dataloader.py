@@ -1,11 +1,7 @@
-""""""
+"""Dataloader for shellmgn dataset. Contains the Hdf5Dataset class for loading data from hdf5 files and the ShellDataset class for creating DGL graphs from the loaded data and applying normalization."""
 
-import os
-import re
 import torch
-import numpy as np
-from typing import Any, List, Union
-from modulus.datapipes.gnn.utils import load_json, read_vtp_file, save_json
+from modulus.datapipes.gnn.utils import load_json, save_json
 
 try:
     import dgl
