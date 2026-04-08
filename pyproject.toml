@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "shellmgn"
+version = "0.1.0"
+description = "Modular MeshGraphNet system for shell mechanics built on top of NVIDIA Modulus with Hydra-based training/inference and uv support."
+authors = [{"name" = "Malaika Noor", "email" = "malaikanoor7864@gmail.com"}]
+requires-python = ">=3.10"
+dependencies = [
+    "dgl==2.4.0+cu124",
+    "h5py",
+    "hydra-core",
+    "networkx==3.4.2",
+    "numpy",
+    "nvidia-modulus",
+    "omegaconf",
+    "pyvista",
+    "torch",
+    "vtk",
+    "wandb",
+]
+
+[tool.uv]
+find-links = ["https://data.dgl.ai/wheels/torch-2.4/cu124/repo.html"]
+
+[tool.uv.sources]
+networkx = { index = "pypi" }
+torch = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.7",
+]
+# uv-specific configuration can be added here
+
+[project.scripts]
+preprocess = "preprocess.main:main"
+shellmgn-train = "shellmgn.main:main"
+shellmgn-infer = "shellmgn.inference.inference:main"

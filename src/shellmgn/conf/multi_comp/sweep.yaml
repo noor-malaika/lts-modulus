@@ -1,0 +1,12 @@
+program: ./src/shellmgn/main.py
+name: sweep_v2
+method: random
+project: shellmgn_sweep_v2
+entity: malaikanoor7864-mnsuam
+parameters:
+  loss:
+    values: ["MSELoss", "LogCoshLoss", "MRAELoss", "HuberLoss"]
+  main_loss:
+    values: ["MultiComponentLossWithUncertainty"]
+stopping_criteria:
+  count: 4

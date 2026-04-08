@@ -1,0 +1,38 @@
+hydra:
+    run:
+        dir: ./runs/shellmgn/mysys_testing/multi_head_without_gradnorm/805_relu_l1loss_min_max_0_1/outputs
+    job:
+        chdir: True
+
+ckpt_path: ./runs/shellmgn/mysys_testing/multi_head_without_gradnorm/805_relu_l1loss_min_max_0_1/checkpoints
+ckpt_name: ./shell.pt
+test_idx: ./runs/shellmgn/mysys_testing/multi_head_without_gradnorm/805_relu_l1loss_min_max_0_1/outputs/test_idx.pt
+data_path: ./data/shellmgn/dataset.hdf5 # -> path to data file - hdf5
+results_dir: ./runs/shellmgn/mysys_testing/multi_head_without_gradnorm/805_relu_l1loss_min_max_0_1/results
+
+input_dim_nodes: 11 # 3d pos, 1d ntype, 1d thickness, 3d spc 3d force
+input_dim_edges: 5 # 3d disp, 1d norm, 1d etypes
+output_dim: 1 # disp_x,y,z | 1d cause multi heads
+hidden_dim_node_encoder: 256
+hidden_dim_edge_encoder: 256
+hidden_dim_node_decoder: 256
+
+aggregation: "sum"
+batch_size: 1
+epochs: 50
+
+num_training_samples: 500
+num_validation_samples: 10
+num_test_samples: 10
+
+lr: 1e-3
+
+amp: False
+jit: False
+wandb_mode: "online"
+
+loss:
+    L1Loss
+
+normalization:
+    min-max
