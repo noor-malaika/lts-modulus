@@ -213,6 +213,8 @@ export WANDB_API_KEY=<your_key>
 
 Then run training normally. Metrics such as training loss, LR, and validation errors are logged.
 
+**W&B Report** - [View-only link](https://api.wandb.ai/links/malaikanoor7864-mnsuam/y8vs32mg)
+
 ---
 
 ## License
